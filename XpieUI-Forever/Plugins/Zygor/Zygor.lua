@@ -50,6 +50,7 @@ local plugin = core:RegisterPlugin("zygor", {
         style     = "xpieui",
         goldArrow = true,   -- "XpieUI Gold" arrow skin (XpieUI style)
         stepAlpha = 50,     -- step box tint, %
+        tabGlow   = 25,     -- gold glow on the selected / hovered guide tab, %
         panel     = PANEL_DEFAULTS,   -- deep-copied into the saved settings
         -- prevArrowSkin: the Zygor arrow skin to restore when goldArrow is off
     },
@@ -504,6 +505,8 @@ end
 --   background  ChatFrameTab-BG{Left,Mid,Right}           40% unless selected
 --   selected    ChatFrameTab-Selected{Left,Mid,Right}     ADD, selected tab only
 --   hover       ChatFrameTab-Highlight{Left,Mid,Right}    ADD, HIGHLIGHT layer
+-- The selected frame and hover glow (white in Blizzard's art) are tinted
+-- Blizzard's gold, at the Tab Glow setting's strength.
 -- The chat art is 32px tall with the tab shape in its lower part; Zygor's tabs
 -- are 20px, so only the art's bottom part shows, unscaled, sitting on the
 -- toolbar's gold header line. Zygor's own tab art, separators and backdrops
@@ -512,17 +515,17 @@ end
 -- ---------------------------------------------------------------------------
 local TAB_ART = "Interface\\ChatFrame\\ChatFrameTab-"
 local TAB_INACTIVE_ALPHA = 0.4   -- Blizzard's CHAT_FRAME_TAB_NORMAL_NOMOUSE_ALPHA
-local TAB_GLOW_ALPHA = 0.25      -- selected glow + hover highlight: subtle
 local TAB_ART_HEIGHT = 32
 local TAB_BOTTOM_TRIM = 4        -- px cut off the art's bottom so the tab sits on the gold line
 local tabSkins = {}              -- [tab] = { bg, sel, hl (triples), font = {Zygor's} }
 
-local function MakeTabTriple(button, kind, layer, blend)
+local function MakeTabTriple(button, kind, layer, blend, gold)
     local triple = {}
     for i, part in ipairs({ "Left", "Mid", "Right" }) do
         local tx = button:CreateTexture(nil, layer, nil, 7)
         tx:SetTexture(TAB_ART .. kind .. part)
         if blend then tx:SetBlendMode(blend) end
+        if gold then tx:SetVertexColor(NORMAL_FONT_COLOR:GetRGB()) end
         tx:Hide()
         triple[i] = tx
     end
@@ -562,8 +565,8 @@ local function StyleTab(tab)
     if not skin then
         skin = {
             bg  = MakeTabTriple(button, "BG", "BACKGROUND"),
-            sel = MakeTabTriple(button, "Selected", "BACKGROUND", "ADD"),
-            hl  = MakeTabTriple(button, "Highlight", "HIGHLIGHT", "ADD"),
+            sel = MakeTabTriple(button, "Selected", "BACKGROUND", "ADD", true),
+            hl  = MakeTabTriple(button, "Highlight", "HIGHLIGHT", "ADD", true),
         }
         tabSkins[tab] = skin
         HookChrome(button)
@@ -578,8 +581,9 @@ local function StyleTab(tab)
     for _, triple in ipairs({ skin.bg, skin.sel, skin.hl }) do LayoutTabTriple(triple, button) end
     local active = tab.isActive and true or false
     SetTripleShown(skin.bg, true, active and 1 or TAB_INACTIVE_ALPHA)
-    SetTripleShown(skin.sel, active, TAB_GLOW_ALPHA)
-    SetTripleShown(skin.hl, true, TAB_GLOW_ALPHA)
+    local glow = (plugin.db.tabGlow or 25) / 100
+    SetTripleShown(skin.sel, active, glow)
+    SetTripleShown(skin.hl, true, glow)
 
     if tab.Text then
         if not skin.font then skin.font = { tab.Text:GetFont() } end
@@ -885,6 +889,7 @@ function plugin:BuildSettings(page)
 
     page:Header("XpieUI Style")
     page:Checkbox({ key = "goldArrow", label = "Gold Waypoint Arrow", description = "Use the XpieUI gold arrowhead as Zygor's arrow skin (also selectable as \"XpieUI Gold\" in Zygor's own options). Off returns to your previous arrow." })
+    page:Slider({ key = "tabGlow", label = "Tab Glow", description = "Strength of the gold glow on the selected guide tab and on a tab under the mouse.", min = 0, max = 100, step = 5, format = "%d%%" })
     page:Slider({ key = "stepAlpha", label = "Step Box Opacity", description = "Tint behind each guide step. Zygor's colours are kept (dark normal, green complete, red unavailable).", min = 0, max = 100, step = 5, format = "%d%%" })
 
     page:PanelStyle(function() return plugin.db.panel end, PANEL_DEFAULTS)
