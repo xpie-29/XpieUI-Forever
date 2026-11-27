@@ -91,12 +91,20 @@ local function BuildPluginPage(plugin)
         status:SetText("Status: " .. addon:GetPluginStatus(plugin))
     end
 
+    -- Settings that matter even while the plugin isn't running (the Quest
+    -- module's XpieUI / DialogueUI switch).
+    if plugin.BuildModuleSettings then
+        addon:SafeCall(plugin.BuildModuleSettings, plugin, page)
+    end
+
     if addon:IsPluginRunning(plugin) then
         if plugin.BuildSettings then
             addon:SafeCall(plugin.BuildSettings, plugin, page)
         end
     elseif not plugin.active then
-        page:Note("This plugin is turned off on the General page. Its settings appear here once it is on.")
+        if not plugin.BuildModuleSettings then
+            page:Note("This plugin is turned off on the General page. Its settings appear here once it is on.")
+        end
     else
         page:Note("Its settings appear here once " .. (plugin.addon or "its addon") .. " is installed and enabled.")
     end
@@ -147,6 +155,9 @@ local function CreatePointer(parent)
     frame:Hide()
     return frame
 end
+
+-- Shared with plugin windows that draw the same arrow (Quest module choice).
+addon.CreateGoldPointer = CreatePointer
 
 -- Point the arrow at a frame's left edge (nil hides it). Only while a
 -- controller is driving the window, so mouse users never see it.
@@ -439,6 +450,7 @@ local function GamepadActive()
     end
     return C_GamePad and C_GamePad.IsEnabled and C_GamePad.IsEnabled() and GAME_PAD_ACTIVE or false
 end
+addon.IsGamepadActive = GamepadActive
 
 local function CreateWindow()
     local frame = CreateFrame("Frame", "XpieUIForeverSettingsFrame", UIParent)

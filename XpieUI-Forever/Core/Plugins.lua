@@ -13,6 +13,9 @@
 --       OnLogin     = function(self) end,           -- after PLAYER_LOGIN
 --       Apply       = function(self) end,           -- re-apply after settings / combat
 --       BuildSettings = function(self, page) end,   -- optional settings sub-page
+--       BuildModuleSettings = function(self, page) end, -- optional, built even
+--                                                   -- when the plugin isn't running
+--       GetStatus   = function(self) end,           -- optional status override
 --   })
 --
 -- Every plugin gets an "enabled" setting (default on). It is read once when
@@ -76,6 +79,10 @@ end
 
 -- One-line status for the settings pages and /xui status.
 function addon:GetPluginStatus(plugin)
+    if plugin.GetStatus then
+        local status = plugin:GetStatus()
+        if status then return status end
+    end
     if plugin.addon and not plugin.targetLoaded then
         local _, _, _, _, reason = C_AddOns.GetAddOnInfo(plugin.addon)
         if reason == "MISSING" then
