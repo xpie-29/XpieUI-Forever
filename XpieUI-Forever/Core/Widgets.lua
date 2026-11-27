@@ -248,38 +248,81 @@ function PageMixin:SetValue(opt, value)
     self.bind.set(opt.key, value)
 end
 
--- White label + Blizzard's gold-arrow dropdown. opt.values() returns
--- { { key = ..., label = ... }, ... }. Mouse: Blizzard's menu. Gamepad: A opens
--- XpieUI's own choice list (up/down, A picks, B cancels); D-pad left/right
--- step through the choices without opening anything.
+-- Blizzard's gold-arrow dropdown look (WowStyle1DropdownTemplate art:
+-- common-dropdown-textholder + common-dropdown-a-button states), but a plain
+-- Button that opens XpieUI's own choice list, for mouse and gamepad alike.
+-- Blizzard's menu isn't used: in gamepad mode, closing a Blizzard menu opened
+-- from addon code makes Blizzard's binding cleanup call protected functions
+-- and XpieUI gets blamed (ADDON_ACTION_FORBIDDEN).
+local ARROW = "common-dropdown-a-button"
+
+local function NewDropdownButton(parent, width)
+    local button = CreateFrame("Button", nil, parent)
+    button:SetSize(width, 25)
+    local bg = button:CreateTexture(nil, "BACKGROUND")
+    bg:SetAtlas("common-dropdown-textholder")
+    bg:SetPoint("TOPLEFT", -8, 7)
+    bg:SetPoint("BOTTOMRIGHT", 8, -9)
+    local arrow = button:CreateTexture(nil, "OVERLAY")
+    arrow:SetPoint("RIGHT", 1, -3)
+    local text = button:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    text:SetPoint("TOPLEFT", 8, -8)
+    text:SetPoint("TOPRIGHT", arrow, "LEFT")
+    text:SetHeight(10)
+    text:SetJustifyH("LEFT")
+    text:SetWordWrap(false)
+    button.Text = text
+
+    local over, down = false, false
+    local function UpdateArrow()
+        local atlas = ARROW
+        if not button:IsEnabled() then atlas = ARROW .. "-disabled"
+        elseif down and over then atlas = ARROW .. "-pressedhover"
+        elseif over then atlas = ARROW .. "-hover"
+        elseif down then atlas = ARROW .. "-pressed"
+        elseif button.isOpen then atlas = ARROW .. "-open" end
+        arrow:SetAtlas(atlas, true)
+    end
+    button.UpdateArrow = UpdateArrow
+    function button:SetOpen(open) self.isOpen = open; UpdateArrow() end
+    button:SetScript("OnEnter", function() over = true; UpdateArrow() end)
+    button:SetScript("OnLeave", function() over = false; UpdateArrow() end)
+    button:SetScript("OnMouseDown", function() down = true; UpdateArrow() end)
+    button:SetScript("OnMouseUp", function() down = false; UpdateArrow() end)
+    button:SetScript("OnEnable", UpdateArrow)
+    button:SetScript("OnDisable", UpdateArrow)
+    UpdateArrow()
+    return button
+end
+
+-- White label + dropdown. opt.values() returns { { key = ..., label = ... }, ... }.
+-- Click or A opens the choice list (up/down, A picks, B cancels); D-pad
+-- left/right step through the choices without opening it.
 function PageMixin:Dropdown(opt)
     local page = self
     local label = Text(self.content, "GameFontHighlightMedium", 190)
     label:SetPoint("TOPLEFT", 22, self.y - 8)
     label:SetText(opt.label)
 
-    local dropdown = CreateFrame("DropdownButton", nil, self.content, "WowStyle1DropdownTemplate")
+    local dropdown = NewDropdownButton(self.content, opt.width or 220)
     dropdown:SetPoint("TOPLEFT", 236, self.y - 2)
-    dropdown:SetWidth(opt.width or 220)
-    dropdown:SetupMenu(function(_, root)
-        root:SetScrollMode(20 * 20)   -- long SharedMedia lists scroll
-        for _, entry in ipairs(opt.values()) do
-            root:CreateRadio(entry.label,
-                function() return page:GetValue(opt) == entry.key end,
-                function() page:SetValue(opt, entry.key) end)
-        end
-    end)
+
     local function Pick(key)
         if page:GetValue(opt) ~= key then page:SetValue(opt, key) end
         page:Refresh()
     end
+    local function Open()
+        local values = opt.values()
+        if #values > 0 then addon:OpenChoiceList(dropdown, values, page:GetValue(opt), Pick) end
+    end
+    dropdown:SetScript("OnClick", function()
+        if dropdown.isOpen then addon:CloseChoiceList() else Open() end
+    end)
+
     self:AddFocus(dropdown, function(button)
+        if button == "PAD1" then Open() return end
         local values = opt.values()
         if #values == 0 then return end
-        if button == "PAD1" then
-            addon:OpenChoiceList(dropdown, values, page:GetValue(opt), Pick)
-            return
-        end
         local current = 1
         for i, entry in ipairs(values) do
             if entry.key == page:GetValue(opt) then current = i end
@@ -287,7 +330,14 @@ function PageMixin:Dropdown(opt)
         local direction = button == "PADDLEFT" and -1 or 1
         Pick(values[(current - 1 + direction) % #values + 1].key)
     end, true)
-    self.refreshers[#self.refreshers + 1] = function() dropdown:GenerateMenu() end
+
+    self.refreshers[#self.refreshers + 1] = function()
+        local value, text = page:GetValue(opt), ""
+        for _, entry in ipairs(opt.values()) do
+            if entry.key == value then text = entry.label end
+        end
+        dropdown.Text:SetText(text)
+    end
     self.y = self.y - 42
     return dropdown
 end

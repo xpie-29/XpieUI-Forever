@@ -64,7 +64,7 @@ end
 
 addon.PANEL_DEFAULTS = {
     look    = "tracker",
-    title   = "Leveling Guide",   -- header bar text; "" for none
+    title   = "",    -- header bar text; "" for none (plugins set their own)
     opacity = 80,    -- %
     header  = true,  -- tracker look
     border  = true,  -- tooltip look

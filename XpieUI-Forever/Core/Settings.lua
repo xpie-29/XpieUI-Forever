@@ -162,9 +162,11 @@ function addon:PointAt(target)
 end
 
 -- ---------------------------------------------------------------------------
--- Choice list: a dropdown's choices for the controller, drawn like Blizzard's
--- dropdown menu (common-dropdown-bg). Up/down move, A picks, B cancels.
--- Blizzard's own menu isn't used here: it can't be driven by our D-pad code.
+-- Choice list: a dropdown's choices, drawn like Blizzard's dropdown menu
+-- (common-dropdown-bg). Mouse: click a choice, or anywhere else to cancel.
+-- Gamepad: up/down move, A picks, B cancels. Blizzard's own menu isn't used:
+-- closing it from addon code in gamepad mode gets XpieUI blamed for a
+-- protected call, and our D-pad code couldn't drive it anyway.
 -- ---------------------------------------------------------------------------
 local CHOICE_ROWS, CHOICE_ROW_HEIGHT = 12, 22
 local choice
@@ -203,6 +205,17 @@ local function CreateChoiceList(parent)
         frame.rows[i] = row
     end
     frame:Hide()
+
+    -- Click-away catcher over the window, just under the list.
+    frame.blocker = CreateFrame("Button", nil, parent)
+    frame.blocker:SetAllPoints(parent)
+    frame.blocker:SetFrameLevel(frame:GetFrameLevel() - 1)
+    frame.blocker:SetScript("OnClick", function() addon:CloseChoiceList() end)
+    frame.blocker:Hide()
+    frame:SetScript("OnHide", function(self)
+        self.blocker:Hide()
+        if self.owner then self.owner:SetOpen(false); self.owner = nil end
+    end)
     return frame
 end
 
@@ -274,7 +287,11 @@ local function SetZone(zone)
 end
 
 function addon:OpenChoiceList(dropdown, values, currentKey, onPick)
+    if choice:IsShown() then addon:CloseChoiceList() end
     choice.values, choice.currentKey, choice.onPick = values, currentKey, onPick
+    choice.owner, choice.prevZone = dropdown, window.zone
+    dropdown:SetOpen(true)
+    choice.blocker:Show()
     choice.index, choice.offset = 1, 0
     for i, entry in ipairs(values) do
         if entry.key == currentKey then choice.index = i end
@@ -289,10 +306,12 @@ function addon:OpenChoiceList(dropdown, values, currentKey, onPick)
 end
 
 local function CloseChoiceList()
+    if not choice:IsShown() then return end
     choice:Hide()
-    window.zone = "page"
-    CurrentPage():ShowFocus()
+    window.zone = choice.prevZone == "list" and "list" or "page"
+    if window.zone == "page" then CurrentPage():ShowFocus() end
 end
+addon.CloseChoiceList = function() CloseChoiceList() end
 
 function addon:PickChoice(valueIndex)
     local entry = choice.values[valueIndex]
