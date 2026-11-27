@@ -1,7 +1,8 @@
 -- Camera.lua  (XpieUI-Forever, Quest module)
 -- Speaker Camera: while a quest or gossip window is open, the camera turns to
 -- the speaker, moves them to the side away from the window and zooms in a
--- little. One fixed behaviour for keyboard & mouse and the controller alike.
+-- little. One fixed behaviour for keyboard & mouse and the controller alike
+-- (the controller UI's own camera values are lifted while it runs).
 --
 --   Speaker (an NPC)       measure its model, zoom in (never out) by its
 --                          height, Blizzard's interact-focus camera (pitch),
@@ -47,6 +48,14 @@ local FOCUS_CVARS = {
     CameraKeepCharacterCentered = 0,
     CameraReduceUnexpectedMovement = 0,
 }
+-- The controller UI lays temporary values over these (Blizzard_Gamepad), so
+-- the camera follows and re-centres differently there. They're lifted for
+-- the conversation, so it moves the same way with either input, and laid
+-- back on afterwards.
+local CONTROLLER_CVARS = {
+    "CameraFollowYawSpeed", "CameraFollowPitchSpeed", "CameraFollowPitchStrength",
+    "CameraFollowPitchDeadZone", "CameraReduceUnexpectedMovement", "CameraKeepCharacterCentered",
+}
 -- Druid forms: shoulder offset per form.
 local FORM_OFFSET = { [1] = 1.0, [2] = 1.0, [3] = 1.1, [4] = 0.9, [5] = 0.9, [27] = 0.55, [29] = 0.55, [31] = 1.0 }
 
@@ -59,6 +68,7 @@ local cam = {
     from = nil, to = nil,-- focus: { strength, shoulder, fov } at the ends of the ease
     zoom = nil,          -- zoom ease: { from, to, t, d, at }
     backup = nil,        -- [cvar] = value before we changed it
+    lifted = nil,        -- [cvar] = the controller UI's temporary value we lifted
     oldZoom = nil,
     onRight = false,     -- window on the right half of the screen
     multiplier = 1,      -- shoulder side and mount scaling
@@ -86,6 +96,14 @@ end
 
 local function Num(cvar, default)
     return tonumber(GetCVar(cvar)) or default
+end
+
+local function ControllerUI()
+    if InputUtil and InputUtil.IsGamepadUIEnabled then
+        local ok, on = pcall(InputUtil.IsGamepadUIEnabled)
+        return ok and on
+    end
+    return false
 end
 
 local function DynamicCamLoaded()
@@ -132,6 +150,24 @@ end
 local function RestoreCVars(backup)
     for cvar, value in pairs(backup) do Set(cvar, value) end
     ConsoleExec("pitchlimit 88")
+end
+
+-- Before any backup, so the backup holds the saved (keyboard) values and
+-- never writes the controller's temporary ones into the saved settings.
+local function LiftControllerCVars()
+    if cam.lifted or not ControllerUI() or not C_CVar.RemoveTempCVar then return end
+    cam.lifted = {}
+    for _, cvar in ipairs(CONTROLLER_CVARS) do
+        cam.lifted[cvar] = GetCVar(cvar)
+        pcall(C_CVar.RemoveTempCVar, cvar)
+    end
+end
+
+local function RelayControllerCVars()
+    local lifted = cam.lifted
+    cam.lifted = nil
+    if not lifted or not ControllerUI() then return end   -- switched to keyboard meanwhile
+    for cvar, value in pairs(lifted) do pcall(C_CVar.SetTempCVar, cvar, value) end
 end
 
 -- ---------------------------------------------------------------------------
@@ -285,6 +321,7 @@ local function Finish()
     events:UnregisterEvent("UPDATE_SHAPESHIFT_FORM")
     if cam.backup then RestoreCVars(cam.backup) end
     cam.backup = nil
+    RelayControllerCVars()
     plugin.db.cameraBackup = nil
     cam.phase, cam.mode, cam.zoom, cam.oldZoom = nil, nil, nil, nil
     cam.measuring = false
@@ -339,6 +376,7 @@ local function Start()
     -- Opened again while easing back: carry on from here, same backup.
     local resuming = cam.phase == "out"
     if not resuming then
+        LiftControllerCVars()
         cam.backup = {}
         plugin.db.cameraBackup = cam.backup   -- saved until restored
         cam.oldZoom = GetCameraZoom()

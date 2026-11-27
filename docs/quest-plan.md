@@ -190,6 +190,7 @@ One fixed behaviour, the user's chosen setup: zoom in on the speaker, turn to th
    - `test_cameraOverShoulder` ±1.5 moves the speaker away from the window's side of the screen.
    - Field of view eased to 75 (not while mounted or gliding).
    - `CameraKeepCharacterCentered`, `CameraReduceUnexpectedMovement` and `test_cameraHeadMovementStrength` are set to 0. Every value is saved first and restored.
+   - Under the controller UI, Blizzard lays temporary values over six camera settings (`CameraFollow*`, `CameraKeepCharacterCentered`, `CameraReduceUnexpectedMovement`). These are lifted with `C_CVar.RemoveTempCVar` before anything is backed up, and laid back on with `SetTempCVar` once the camera is back, so the movement is the same with either input and the controller's values are never written into the saved settings.
 4. **One motion.** Turn, shoulder offset, field of view and zoom all ease together on one clock (in-out sine, 1 s). The zoom is stepped along the same curve with small `CameraZoomIn`/`Out` calls, not one jump at the game's zoom speed. If the model loads late, the zoom still finishes with the rest (at least 0.6 s).
 5. **Put it back** when the window closes: everything eases back the same way, then every saved value is set exactly.
    - **Gossip → quest:** going from gossip to a quest page counts as one conversation (0.15 s grace), so the camera doesn't bounce. A window reopened while easing back carries on from there.
