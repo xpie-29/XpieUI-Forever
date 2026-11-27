@@ -34,7 +34,7 @@ local PageMixin = {}
 local pages = {}
 
 function addon:NewSettingsPage(bind)
-    local page = Mixin({ bind = bind, refreshers = {}, focusables = {}, y = -10 }, PageMixin)
+    local page = Mixin({ bind = bind, refreshers = {}, focusables = {}, editBoxes = {}, y = -10 }, PageMixin)
 
     -- Hosted by the settings window; a scroll frame fills it.
     page.frame = CreateFrame("Frame")
@@ -255,16 +255,44 @@ end
 -- from addon code makes Blizzard's binding cleanup call protected functions
 -- and XpieUI gets blamed (ADDON_ACTION_FORBIDDEN).
 local ARROW = "common-dropdown-a-button"
+local ARROW_STATES = { "", "-disabled", "-pressedhover", "-hover", "-pressed", "-open" }
+
+local function AtlasExists(name)
+    return C_Texture.GetAtlasInfo(name) ~= nil
+end
+
+-- If a patch renames the dropdown art, draw a plain dark box with the chat
+-- frame's expand arrow instead of an invisible control.
+local dropdownArtOK
+local function DropdownArtExists()
+    if dropdownArtOK == nil then
+        dropdownArtOK = AtlasExists("common-dropdown-textholder")
+        for _, state in ipairs(ARROW_STATES) do
+            dropdownArtOK = dropdownArtOK and AtlasExists(ARROW .. state)
+        end
+    end
+    return dropdownArtOK
+end
 
 local function NewDropdownButton(parent, width)
     local button = CreateFrame("Button", nil, parent)
     button:SetSize(width, 25)
+    local native = DropdownArtExists()
     local bg = button:CreateTexture(nil, "BACKGROUND")
-    bg:SetAtlas("common-dropdown-textholder")
-    bg:SetPoint("TOPLEFT", -8, 7)
-    bg:SetPoint("BOTTOMRIGHT", 8, -9)
+    if native then
+        bg:SetAtlas("common-dropdown-textholder")
+        bg:SetPoint("TOPLEFT", -8, 7)
+        bg:SetPoint("BOTTOMRIGHT", 8, -9)
+    else
+        bg:SetAllPoints()
+        bg:SetColorTexture(0, 0, 0, 0.6)
+    end
     local arrow = button:CreateTexture(nil, "OVERLAY")
     arrow:SetPoint("RIGHT", 1, -3)
+    if not native then
+        arrow:SetTexture("Interface\\ChatFrame\\ChatFrameExpandArrow")
+        arrow:SetSize(16, 16)
+    end
     local text = button:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     text:SetPoint("TOPLEFT", 8, -8)
     text:SetPoint("TOPRIGHT", arrow, "LEFT")
@@ -275,6 +303,10 @@ local function NewDropdownButton(parent, width)
 
     local over, down = false, false
     local function UpdateArrow()
+        if not native then
+            arrow:SetDesaturated(not button:IsEnabled())
+            return
+        end
         local atlas = ARROW
         if not button:IsEnabled() then atlas = ARROW .. "-disabled"
         elseif down and over then atlas = ARROW .. "-pressedhover"
@@ -375,8 +407,12 @@ function PageMixin:TextInput(opt)
     self.refreshers[#self.refreshers + 1] = function()
         if not box:HasFocus() then box:SetText(page:GetValue(opt) or "") end
     end
+    self.editBoxes[#self.editBoxes + 1] = box
+    -- A toggles typing (a keyboard is needed to type); moving off the row,
+    -- B or leaving the page saves and gives the keyboard back.
     self:AddFocus(label, function(button)
-        if button == "PAD1" then box:SetFocus() end
+        if button ~= "PAD1" then return end
+        if box:HasFocus() then box:ClearFocus() else box:SetFocus() end
     end)
     self.y = self.y - height - 8
     return box
@@ -450,6 +486,7 @@ end
 
 -- Next/previous stop that's visible (plugin pages can hide parts).
 function PageMixin:MoveFocus(delta)
+    self:ReleaseTextFocus()
     local count = #self.focusables
     if count == 0 then return false end
     local index = self.focusIndex or (delta > 0 and 0 or count + 1)
@@ -474,7 +511,16 @@ function PageMixin:ActivateFocus(button)
     end
 end
 
+-- Take keyboard focus away from this page's text boxes (their focus-lost
+-- handler saves the text).
+function PageMixin:ReleaseTextFocus()
+    for _, box in ipairs(self.editBoxes) do
+        if box:HasFocus() then box:ClearFocus() end
+    end
+end
+
 function PageMixin:ClearFocus()
+    self:ReleaseTextFocus()
     self.focusIndex = nil
     self.scroll:SetVerticalScroll(0)
 end

@@ -113,7 +113,7 @@ end
 -- Font: Zygor draws with its own Open Sans (ZGV.Font / ZGV.FontBold). The
 -- guide's step text reads ZGV.Font each time it draws, so swapping it converts
 -- the guide. A few Zygor files copy the font once at load (step number, tabs,
--- menus): the step number is set directly below; tabs come in Delivery 3.
+-- menus): the step number and tab labels are set directly (below).
 -- ---------------------------------------------------------------------------
 local zygorFont, zygorFontBold   -- Zygor's own fonts, for the Original style
 
@@ -261,19 +261,23 @@ local function ApplyArrow()
         return
     end
 
+    -- Act only when the toggle (or the style) changed since we last applied
+    -- it, so a skin picked in Zygor's own options stays picked.
     local db = plugin.db
-    local want = XpieStyle() and db.goldArrow
+    local want = (XpieStyle() and db.goldArrow) and true or false
+    if db.arrowApplied == want then return end
     local current = profile.arrowskin
     if want and current ~= SKIN_ID then
         db.prevArrowSkin = current
         Pointer:SetArrowSkin(SKIN_ID)
         Pointer:UpdateArrowVisibility()
-    elseif not want and current == SKIN_ID then
+    elseif not want and current == SKIN_ID and db.arrowApplied then
         local prev = db.prevArrowSkin
         if not (prev and Pointer.ArrowSkins[prev]) then prev = "Starlight" end
         Pointer:SetArrowSkin(prev)
         Pointer:UpdateArrowVisibility()
     end
+    db.arrowApplied = want
 end
 
 -- ---------------------------------------------------------------------------
@@ -429,11 +433,21 @@ local function RestoreTitleButton(button)
     end
 end
 
+-- All three atlases present in this client? If not, the button keeps Zygor's
+-- own art rather than ending up invisible.
+local function SpecArtExists(spec)
+    if spec.artOK == nil then
+        local function has(name) return C_Texture.GetAtlasInfo(name) ~= nil end
+        spec.artOK = has(spec.normal) and has(spec.pushed) and has(spec.hover)
+    end
+    return spec.artOK
+end
+
 local function ApplyTitleButtons(controls)
     local on = XpieStyle() and plugin.panel ~= nil
     for key, spec in pairs(BUTTON_STYLES) do
         local button = controls[key]
-        if button then
+        if button and SpecArtExists(spec) then
             GetSkin(button, spec)
             if on then StyleTitleButton(button) else RestoreTitleButton(button) end
         end
@@ -519,10 +533,10 @@ local TAB_ART_HEIGHT = 32
 local TAB_BOTTOM_TRIM = 4        -- px cut off the art's bottom so the tab sits on the gold line
 local tabSkins = {}              -- [tab] = { bg, sel, hl (triples), font = {Zygor's} }
 
-local function MakeTabTriple(button, kind, layer, blend, gold)
+local function MakeTabTriple(button, kind, layer, sublevel, blend, gold)
     local triple = {}
     for i, part in ipairs({ "Left", "Mid", "Right" }) do
-        local tx = button:CreateTexture(nil, layer, nil, 7)
+        local tx = button:CreateTexture(nil, layer, nil, sublevel)
         tx:SetTexture(TAB_ART .. kind .. part)
         if blend then tx:SetBlendMode(blend) end
         if gold then tx:SetVertexColor(NORMAL_FONT_COLOR:GetRGB()) end
@@ -564,9 +578,11 @@ local function StyleTab(tab)
     local skin = tabSkins[tab]
     if not skin then
         skin = {
-            bg  = MakeTabTriple(button, "BG", "BACKGROUND"),
-            sel = MakeTabTriple(button, "Selected", "BACKGROUND", "ADD", true),
-            hl  = MakeTabTriple(button, "Highlight", "HIGHLIGHT", "ADD", true),
+            -- Selected glow one sublevel above the background, so it always
+            -- draws on top of it.
+            bg  = MakeTabTriple(button, "BG", "BACKGROUND", 6),
+            sel = MakeTabTriple(button, "Selected", "BACKGROUND", 7, "ADD", true),
+            hl  = MakeTabTriple(button, "Highlight", "HIGHLIGHT", 7, "ADD", true),
         }
         tabSkins[tab] = skin
         HookChrome(button)

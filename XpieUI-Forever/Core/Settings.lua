@@ -258,6 +258,7 @@ local function SelectPage(index)
     for i, entry in ipairs(entries) do
         local selected = i == index
         entry.page.frame:SetShown(selected)
+        if not selected then entry.page:ReleaseTextFocus() end
         if selected then entry.button:LockHighlight() else entry.button:UnlockHighlight() end
     end
     entries[index].page:ClearFocus()
@@ -281,6 +282,7 @@ local function SetZone(zone)
         end
     end
     if window.zone == "list" then
+        page:ReleaseTextFocus()
         page.focusIndex = nil
         addon:PointAt(entries[window.selected].button)
     end
@@ -400,16 +402,18 @@ local function HandlePadButton(button)
 end
 
 local function Window_OnGamePadButtonDown(self, button)
+    -- In combat the window is mouse-only: every button goes to the game (set
+    -- at PLAYER_REGEN_DISABLED, the last moment propagation can be changed),
+    -- so abilities on the controller keep working while it's open.
+    if InCombatLockdown() then return end
     if not self.usingPad then
         -- First press: show the arrow where the controller is.
         self.usingPad = true
         SetZone(self.zone or "list")
     end
     local handled = HandlePadButton(button)
-    -- Unused buttons go on to the game; this can't change in combat.
-    if not InCombatLockdown() then
-        self:SetPropagateKeyboardInput(not handled)
-    end
+    -- Unused buttons go on to the game.
+    self:SetPropagateKeyboardInput(not handled)
     if handled and REPEATABLE[button] and self:IsShown() then
         self.repeatButton, self.repeatWait = button, REPEAT_DELAY
     end
@@ -533,6 +537,10 @@ local function BuildWindow(pageList)
     end)
     window:SetScript("OnHide", function(self)
         if SOUNDKIT then PlaySound(SOUNDKIT.IG_MAINMENU_CLOSE) end
+        local page = CurrentPage()
+        if page then page:ReleaseTextFocus() end
+        -- Opened again in combat, it must let every button through.
+        if not InCombatLockdown() then self:SetPropagateKeyboardInput(true) end
         if self.EnableGamePadButton then self:EnableGamePadButton(false) end
         self.repeatButton = nil
         choice:Hide()
@@ -541,6 +549,20 @@ local function BuildWindow(pageList)
     window:SetScript("OnGamePadButtonDown", Window_OnGamePadButtonDown)
     window:SetScript("OnGamePadButtonUp", Window_OnGamePadButtonUp)
     window:SetScript("OnUpdate", Window_OnUpdate)
+    window:SetPropagateKeyboardInput(true)
+    window:RegisterEvent("PLAYER_REGEN_DISABLED")
+    window:RegisterEvent("PLAYER_REGEN_ENABLED")
+    window:SetScript("OnEvent", function(self, event)
+        if not self:IsShown() then return end
+        if event == "PLAYER_REGEN_DISABLED" then
+            self:SetPropagateKeyboardInput(true)
+            self.repeatButton = nil
+            if choice:IsShown() then CloseChoiceList() end
+            pointer:Hide()
+        elseif self.usingPad then
+            SetZone(self.zone or "list")   -- combat over: show the arrow again
+        end
+    end)
 end
 
 -- Small entry in Options > AddOns that opens the real window.
@@ -557,9 +579,11 @@ local function RegisterBlizzardEntry()
     open:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -14)
     open:SetSize(220, 28)
     open:SetText("Open " .. CATEGORY_NAME)
+    -- Opens on top of Blizzard's Options (higher strata) without closing it:
+    -- closing Blizzard's panel from addon code risks the same gamepad taint
+    -- as an addon StaticPopup. Closing ours returns to Options.
     open:SetScript("OnClick", function()
-        if SettingsPanel and SettingsPanel:IsShown() then HideUIPanel(SettingsPanel) end
-        addon:OpenSettings()
+        addon:OpenSettings(nil, true)
     end)
     local category = Settings.RegisterCanvasLayoutCategory(stub, CATEGORY_NAME)
     Settings.RegisterAddOnCategory(category)
@@ -577,12 +601,12 @@ function addon:CreateSettings()
 end
 
 -- /xui: toggle the window. Optional page index (1 = General).
-function addon:OpenSettings(index)
+function addon:OpenSettings(index, keepOpen)
     if not window then
         self:Print("Settings aren't available yet. Try again after entering the world.")
         return
     end
-    if window:IsShown() and not index then
+    if window:IsShown() and not index and not keepOpen then
         window:Hide()
         return
     end

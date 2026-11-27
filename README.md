@@ -4,7 +4,7 @@ A WoW Forever addon (Interface 16001): a settings shell with built-in plugins th
 
 | Plugin | Styles | Status |
 |---|---|---|
-| Zygor Guides | ZygorGuidesViewerForever | in progress |
+| Zygor Guides | ZygorGuidesViewerForever | Deliveries 1–3 done |
 
 Each plugin only runs when the addon it styles is loaded, and can be turned off in settings (takes a `/reload`).
 
@@ -18,7 +18,9 @@ Each plugin only runs when the addon it styles is loaded, and can be turned off 
 
 | Command | |
 |---|---|
-| `/xui`, `/xpieui` | Open settings (Options > AddOns > XpieUI Forever) |
+| `/xui`, `/xpieui` | Open or close the settings window (also reachable from Options > AddOns > XpieUI Forever) |
 | `/xui status` | Each plugin's state |
 | `/xui reset` | Reset all settings (type twice) |
 | `/xui zygor` | Check the Zygor plugin can see Zygor (testing) |
+| `/xui zygorpos` | Report Zygor's window position and clamping (testing) |
+| `/xui arrowdebug` | Report Zygor arrow state changes in chat (troubleshooting) |

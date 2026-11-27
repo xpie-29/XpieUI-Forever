@@ -37,7 +37,7 @@ XpieUI-Forever/            the addon (only this folder is deployed)
   Core/Plugins.lua         registry
   Core/Panels.lua          native background panel (Quest Tracker / Tooltip looks)
   Core/Widgets.lua         checkbox, slider, dropdown, edit box, panel section
-  Core/Settings.lua        Blizzard Settings category + one sub-page per plugin
+  Core/Settings.lua        own settings window (native Edit Mode look, gamepad) + Options > AddOns entry
   Plugins/Zygor/Zygor.lua
   Plugins/Zygor/Media/arrow.tga
 ```
@@ -71,9 +71,9 @@ Code is ported from these source files in `_assets/XpieHUD-main/`:
    - Settings: opacity, header/border, title, padding.
    - The panel follows the target frame's size, alpha and visibility.
    - Each atlas is checked with `C_Texture.GetAtlasInfo`. If one is missing, the panel falls back to the Tooltip look and says so once.
-4. **Settings:**
+4. **Settings:** (changed after Delivery 1: XpieUI's own window instead of Blizzard Settings sub-pages, so it can be driven by a controller without joining Blizzard's gamepad navigation; Options > AddOns keeps a small entry that opens it)
    - Main page: version, plus each plugin with its Enabled switch and whether its target addon was found.
-   - One sub-page per plugin.
+   - One page per plugin, listed on the left.
 5. **Slash commands:**
    - `/xui` opens settings.
    - `/xui reset` resets everything after two confirmations.
@@ -89,13 +89,13 @@ The plugin offers two styles: **XpieUI** (default) and **Original** (leaves Zygo
   - Re-apply to steps Zygor has already built (`ApplySkinToSteps`), in case it loaded first.
   - Confirmed present in Zygor Forever 1.6 under `Skins/Default/`: `SetBackgroundForStep`, `Border.Back`, `Border.TitleBar` (with `Logo`), `Border.Toolbar`, `Border.TabContainer`, `MenuButton`, `CloseButton`, and `ZGV.Pointer:AddArrowSkin`.
 - **2b.** Make the window chrome transparent, hide the logo, and use `STANDARD_TEXT_FONT`.
-- **2c.** Put the native background panel behind the guide window, titled "Leveling Guide".
+- **2c.** Put the native background panel behind the guide window, titled "Zygor" (first test build used "Leveling Guide"; saved titles are migrated).
 - **2d.** Replace the title bar buttons with Blizzard's gold settings gear and red close button.
 - **2e.** Put the toolbar on the tracker's section-header art, with a gold step number and flat arrows.
 - **2f.** Restyle guide tabs with chat tab art and a gold glow on the selected tab.
 - **2g.** Keep step boxes in Zygor's state colours at an adjustable opacity, without edges.
-- **2h.** Register the gold arrow as the "XpieUI Gold" skin, with a toggle. Turning it off restores the previous skin. Add `/xui arrowdebug`.
-- **Settings page:** Style, Gold Arrow, Step Box Opacity, the panel controls, and Reset Panel.
+- **2h.** Register the gold arrow as the "XpieUI Gold" skin, with a toggle. Turning it off restores the previous skin. The toggle only acts when it changes, so a skin picked in Zygor's own options stays picked. Add `/xui arrowdebug`.
+- **Settings page:** Style, Gold Arrow, Tab Glow, Step Box Opacity, the panel controls, and Reset Panel.
 
 ## Risks
 - Some atlases or templates may differ from retail 12.1.5. Each one is checked at runtime and has a fallback.
@@ -109,7 +109,7 @@ Each delivery follows the same steps:
    - BugSack shows no errors on login or after `/reload`.
    - Settings persist across `/reload`.
 3. Check what each delivery adds:
-   - **Delivery 1:** the "XpieUI Forever" settings category appears with the Zygor sub-page, and `/xui` opens settings.
+   - **Delivery 1:** `/xui` opens the XpieUI Forever window with General and Zygor pages, and Options > AddOns has an entry that opens it.
    - **Delivery 2:** Zygor's window is transparent, uses Blizzard's font, and has the native panel behind it, which resizes and hides with the window. The Original style restores Zygor's own look after `/reload`.
    - **Delivery 3:** the gear and close buttons, toolbar and tabs are styled; the step box opacity slider works; the gold arrow appears while navigating, and toggling it restores the previous skin.
 4. Commit once per delivery. You decide when to merge into `main`.
