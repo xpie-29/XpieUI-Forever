@@ -5,6 +5,8 @@
 --   * Position.lua  one shared, saved position for the three windows
 --   * Fonts.lua     Font Size for Blizzard's quest fonts
 --   * HideUI.lua    the rest of the UI fades while a window is open
+--   * Keys.lua      keyboard controls and tooltips at the cursor (keyboard
+--                   & mouse only), Badges.lua their numbers and key hints
 --
 -- The module has no target addon: it works on Blizzard's frames. It stands
 -- down (no hooks act) while DialogueUI is loaded, until the player picks one.
@@ -19,6 +21,7 @@ local plugin = core:RegisterPlugin("quest", {
     defaults = {
         fontSize = 100,   -- % of Blizzard's quest font sizes
         hideUI   = true,  -- fade the rest of the UI while a window is open
+        keyboard = true,  -- keyboard controls, badges and hints (keyboard & mouse only)
         -- point: { left, top } of the windows in UIParent units (absent =
         -- where Blizzard puts them). Set by dragging or Move Windows.
     },
@@ -109,6 +112,11 @@ function plugin:BuildSettings(page)
     page:Checkbox({ key = "hideUI", label = "Hide UI While Talking",
         description = "While a quest, gossip or book window is open, the rest of the interface fades out. It comes back when the window closes, or at once if combat starts." })
 
+    page:Header("Keyboard")
+    page:Checkbox({ key = "keyboard", label = "Keyboard Controls",
+        description = "Keyboard & mouse only (off while the controller UI is on): W/S or arrows move the highlight, A/D move across rewards or turn book pages, Space picks or accepts, 1-9 pick directly, Esc closes. Adds number badges and Space/Esc hints." })
+    page:Note("While a window is open, tooltips appear at the mouse instead of the screen corner (keyboard & mouse).")
+
     page:Header("Window Position")
     page:Note("The quest, gossip and book windows share one position. Drag any of them by its title bar, or use Move Windows (works with a controller: D-pad moves, A saves, B cancels).")
     page:Button("Move Windows", function() plugin:StartMoveMode() end)
@@ -138,6 +146,8 @@ function plugin:OnLogin()
     else
         self:InitPosition()
         self:InitHideUI()
+        self:InitKeys()
+        self:InitBadges()
         self:Apply()
     end
 end
@@ -147,4 +157,5 @@ function plugin:Apply()
     if not self:IsLive() then return end
     self:ApplyFonts()
     if self.UpdateHideUI then self.UpdateHideUI() end
+    if self.UpdateKeys then self.UpdateKeys() end
 end
