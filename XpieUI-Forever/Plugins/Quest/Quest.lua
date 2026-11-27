@@ -1,8 +1,10 @@
 -- Quest.lua  (XpieUI-Forever, Quest module)
 -- Blizzard's own quest, gossip and book windows, kept native, with a few
--- additions (plan: docs/quest-plan.md). Delivery 1:
+-- additions (plan: docs/quest-plan.md):
 --   * Choice.lua    XpieUI or DialogueUI: the two can't run together
 --   * Position.lua  one shared, saved position for the three windows
+--   * Fonts.lua     Font Size for Blizzard's quest fonts
+--   * HideUI.lua    the rest of the UI fades while a window is open
 --
 -- The module has no target addon: it works on Blizzard's frames. It stands
 -- down (no hooks act) while DialogueUI is loaded, until the player picks one.
@@ -15,6 +17,8 @@ local plugin = core:RegisterPlugin("quest", {
     title       = "Quest Windows",
     description = "Blizzard's quest, gossip and book windows with one shared position you can move.",
     defaults = {
+        fontSize = 100,   -- % of Blizzard's quest font sizes
+        hideUI   = true,  -- fade the rest of the UI while a window is open
         -- point: { left, top } of the windows in UIParent units (absent =
         -- where Blizzard puts them). Set by dragging or Move Windows.
     },
@@ -99,6 +103,12 @@ end
 
 function plugin:BuildSettings(page)
     if self:DialogueUILoaded() then return end   -- waiting for the choice
+    page:Header("Reading")
+    page:Slider({ key = "fontSize", label = "Font Size", min = 80, max = 150, step = 5, format = "%d%%",
+        description = "Size of the quest text in the quest, gossip and book windows. The windows keep their size; long text scrolls. Quest text in the map and quest log follows." })
+    page:Checkbox({ key = "hideUI", label = "Hide UI While Talking",
+        description = "While a quest, gossip or book window is open, the rest of the interface fades out. It comes back when the window closes, or at once if combat starts." })
+
     page:Header("Window Position")
     page:Note("The quest, gossip and book windows share one position. Drag any of them by its title bar, or use Move Windows (works with a controller: D-pad moves, A saves, B cancels).")
     page:Button("Move Windows", function() plugin:StartMoveMode() end)
@@ -127,5 +137,14 @@ function plugin:OnLogin()
         self:ShowChoice()
     else
         self:InitPosition()
+        self:InitHideUI()
+        self:Apply()
     end
+end
+
+-- After a setting changed (and once at login).
+function plugin:Apply()
+    if not self:IsLive() then return end
+    self:ApplyFonts()
+    if self.UpdateHideUI then self.UpdateHideUI() end
 end
