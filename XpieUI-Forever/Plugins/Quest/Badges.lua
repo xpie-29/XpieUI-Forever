@@ -167,10 +167,8 @@ function plugin:InitBadges()
     self.badgesReady = true
     local function Refresh() plugin:RefreshBadges() end
     if GossipFrame and GossipFrame.Update then hooksecurefunc(GossipFrame, "Update", Refresh) end
-    local scrollBox = GossipFrame and GossipFrame.GreetingPanel and GossipFrame.GreetingPanel.ScrollBox
-    if scrollBox and scrollBox.RegisterCallback and ScrollBoxListMixin and ScrollBoxListMixin.Event then
-        scrollBox:RegisterCallback(ScrollBoxListMixin.Event.OnDataRangeChanged, Refresh, FONTS)
-    end
+    -- Keyboard & mouse only (see Keys.lua).
+    if self.AddGossipScrollCallback then self:AddGossipScrollCallback(FONTS, Refresh) end
     for _, panel in ipairs({ QuestFrameGreetingPanel, QuestFrameDetailPanel, QuestFrameProgressPanel, QuestFrameRewardPanel }) do
         if panel then panel:HookScript("OnShow", Refresh) end
     end

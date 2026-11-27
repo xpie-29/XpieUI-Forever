@@ -15,15 +15,21 @@
 -- turn, side offset, field of view and zoom. The zoom is driven in small
 -- steps along the same curve rather than handed to the game in one jump.
 -- Closing the window eases everything back the same way (gossip -> quest
--- counts as one conversation); combat and logout put it back at once. The
--- values it changes are also kept in the saved variables until restored, so
--- a crash mid-conversation is put right at the next login. Stands down while
--- DynamicCam is loaded.
+-- counts as one conversation); combat and logout put it back at once. Stands
+-- down while a camera addon is loaded (CAMERA_ADDONS in Quest.lua).
+--
+-- Crash recovery: every clean logout saves the player's own values of the
+-- settings the camera changes (the baseline). Saved variables only reach
+-- disk at logout, so a crash mid-conversation leaves the baseline from the
+-- last clean logout. At the next load, a setting that differs from it and
+-- holds a value the camera sets is put back. This runs whether or not the
+-- plugin is on.
 --
 -- Blizzard's experimental-camera warning (the test_camera* settings) is
 -- switched off with GameEvent.UnregisterInternalEvent, which removes
--- Blizzard's own handler for it. That runs as soon as our saved settings
--- load; the camera never touches a test_camera* setting unless it worked.
+-- Blizzard's own handler for it. That only happens when the camera is about
+-- to be used, or a crash leftover is being put back; the camera never
+-- touches a test_camera* setting unless it worked.
 
 local addonName = ...
 local core = XpieUI
@@ -106,9 +112,6 @@ local function ControllerUI()
     return false
 end
 
-local function DynamicCamLoaded()
-    return C_AddOns.IsAddOnLoaded("DynamicCam") and true or false
-end
 
 -- ---------------------------------------------------------------------------
 -- Blizzard's experimental-camera warning
@@ -121,23 +124,23 @@ local function BlockWarning()
     end
 end
 
--- As early as possible: our saved settings have just loaded, before login
--- (a leftover test_camera* value could raise it at login).
-local loader = CreateFrame("Frame")
-loader:RegisterEvent("ADDON_LOADED")
-loader:SetScript("OnEvent", function(self, _, name)
-    if name ~= addonName then return end
-    self:UnregisterEvent("ADDON_LOADED")
-    local all = XpieUIForeverDB and XpieUIForeverDB.plugins
-    local db = type(all) == "table" and all.quest
-    if type(db) ~= "table" or (db.enabled ~= false and db.camera ~= false) or db.cameraBackup then
-        BlockWarning()
-    end
-end)
+-- ---------------------------------------------------------------------------
+-- Settings we change, backed up first
+-- ---------------------------------------------------------------------------
+-- pitchlimit is a console command. If the client also reads it as a setting,
+-- the player's value is kept; otherwise Blizzard's default (88) is used.
+local PITCH = "pitchlimit"
+local PITCH_DEFAULT = 88
 
--- ---------------------------------------------------------------------------
--- Settings we change, backed up first (and saved, for a crash)
--- ---------------------------------------------------------------------------
+local function ReadPitchLimit()
+    local ok, value = pcall(GetCVar, PITCH)
+    return ok and tonumber(value) or PITCH_DEFAULT
+end
+
+local function SetPitchLimit(value)
+    ConsoleExec(PITCH .. " " .. math.floor(value + 0.5))
+end
+
 local function Backup(cvar)
     if cam.backup[cvar] == nil then cam.backup[cvar] = GetCVar(cvar) end
 end
@@ -148,8 +151,68 @@ local function BackupAndSet(cvar, value)
 end
 
 local function RestoreCVars(backup)
-    for cvar, value in pairs(backup) do Set(cvar, value) end
-    ConsoleExec("pitchlimit 88")
+    for cvar, value in pairs(backup) do
+        if cvar ~= PITCH then Set(cvar, value) end
+    end
+    SetPitchLimit(tonumber(backup[PITCH]) or PITCH_DEFAULT)
+end
+
+-- ---------------------------------------------------------------------------
+-- Crash recovery (see the top of the file)
+-- ---------------------------------------------------------------------------
+-- [cvar] = the value the camera sets, or true for one it eases (any value).
+local CAMERA_VALUES = {
+    test_cameraTargetFocusInteractEnable = "1",
+    [STRENGTH] = true,
+    test_cameraTargetFocusInteractStrengthYaw = "0",
+    test_cameraHeadMovementStrength = "0",
+    CameraKeepCharacterCentered = "0",
+    CameraReduceUnexpectedMovement = "0",
+    [SHOULDER] = true,
+    cameraFov = tostring(FOV_ZOOMED),
+}
+-- The controller UI lays temporary values over these, so at logout under it
+-- the value read isn't the player's saved one: left out of the baseline.
+local CONTROLLER_SET = {}
+for _, cvar in ipairs(CONTROLLER_CVARS) do CONTROLLER_SET[cvar] = true end
+
+local function SameValue(a, b)
+    local x, y = tonumber(a), tonumber(b)
+    if x and y then return math.abs(x - y) < 0.001 end
+    return a == b
+end
+
+local function QuestDB()
+    local all = XpieUIForeverDB and XpieUIForeverDB.plugins
+    local db = type(all) == "table" and all.quest
+    return type(db) == "table" and db or nil
+end
+
+local function RecoverFromCrash()
+    local db = QuestDB()
+    db = db and db.cameraBaseline
+    if type(db) ~= "table" or plugin:CameraAddonPresent() then return end
+    for cvar, ours in pairs(CAMERA_VALUES) do
+        local saved, now = db[cvar], GetCVar(cvar)
+        if saved ~= nil and now ~= nil and not SameValue(now, saved)
+            and (ours == true or SameValue(now, ours)) then
+            if cvar:find("^test_camera") then BlockWarning() end
+            Set(cvar, saved)
+        end
+    end
+end
+
+local function SaveBaseline()
+    local db = QuestDB()
+    if not db then return end
+    db.cameraBackup = nil   -- older builds' key
+    if plugin:CameraAddonPresent() then db.cameraBaseline = nil; return end
+    local baseline = {}
+    local controller = ControllerUI()
+    for cvar in pairs(CAMERA_VALUES) do
+        if not (controller and CONTROLLER_SET[cvar]) then baseline[cvar] = GetCVar(cvar) end
+    end
+    db.cameraBaseline = baseline
 end
 
 -- Before any backup, so the backup holds the saved (keyboard) values and
@@ -226,8 +289,13 @@ local function PanOffset()
     return (GetCameraZoom() * 0.4314 + 0.1057) * cam.panScale
 end
 
+-- Only written when it moves: each write fires CVAR_UPDATE for every listener.
 local function SetShoulder(value)
-    cam.shoulderNow = value
+    if cam.shoulderSent and math.abs(value - cam.shoulderSent) < 0.001 then
+        cam.shoulderNow = value
+        return
+    end
+    cam.shoulderNow, cam.shoulderSent = value, value
     Set(SHOULDER, value)
 end
 
@@ -322,8 +390,8 @@ local function Finish()
     if cam.backup then RestoreCVars(cam.backup) end
     cam.backup = nil
     RelayControllerCVars()
-    plugin.db.cameraBackup = nil
     cam.phase, cam.mode, cam.zoom, cam.oldZoom = nil, nil, nil, nil
+    cam.shoulderSent = nil
     cam.measuring = false
 end
 
@@ -340,7 +408,8 @@ function Tick(_, elapsed)
             if from.fov and to.fov then Set("cameraFov", Ease(from.fov, to.fov, p)) end
             if phase == "in" then
                 -- A lowered pitch limit tips the camera level; let go of it at the end.
-                ConsoleExec("pitchlimit " .. (p < 1 and math.floor(Ease(88, 15, p) + 0.5) or 88))
+                local base = tonumber(cam.backup[PITCH]) or PITCH_DEFAULT
+                SetPitchLimit(p < 1 and Ease(base, 15, p) or base)
             end
         end
     elseif phase == "out" then
@@ -377,8 +446,7 @@ local function Start()
     local resuming = cam.phase == "out"
     if not resuming then
         LiftControllerCVars()
-        cam.backup = {}
-        plugin.db.cameraBackup = cam.backup   -- saved until restored
+        cam.backup = { [PITCH] = ReadPitchLimit() }
         cam.oldZoom = GetCameraZoom()
     end
     local zoomNow = ZoomTarget()
@@ -419,10 +487,13 @@ local function Start()
     else
         cam.mode = "pan"
         cam.measuring = false
-        -- Back from a speaker mid-ease: the focus settings go straight back.
-        for _, cvar in ipairs({ "test_cameraTargetFocusInteractEnable", STRENGTH }) do
+        -- Back from a speaker mid-ease: everything the speaker camera set goes
+        -- straight back (the pan sets its own below).
+        for cvar in pairs(FOCUS_CVARS) do
             if cam.backup[cvar] ~= nil then Set(cvar, cam.backup[cvar]) end
         end
+        if cam.backup.cameraFov ~= nil then Set("cameraFov", cam.backup.cameraFov) end
+        if resuming then SetPitchLimit(tonumber(cam.backup[PITCH]) or PITCH_DEFAULT) end
         BackupAndSet(SHOULDER)
         BackupAndSet("CameraKeepCharacterCentered", 0)
         BackupAndSet("CameraReduceUnexpectedMovement", 0)
@@ -444,7 +515,7 @@ local function Restore(instant)
         return
     end
     if cam.phase == "out" then return end
-    if cam.phase == "in" then ConsoleExec("pitchlimit 88") end
+    if cam.phase == "in" then SetPitchLimit(tonumber(cam.backup[PITCH]) or PITCH_DEFAULT) end
     cam.phase, cam.t = "out", 0
     cam.measuring = false
     cam.measureId = cam.measureId + 1   -- a late measurement is ignored
@@ -459,7 +530,7 @@ local function Restore(instant)
 end
 
 local function CameraOn()
-    return plugin:IsLive() and plugin.db.camera and blocked and not DynamicCamLoaded()
+    return plugin:IsLive() and plugin.db.camera and blocked and not plugin:CameraAddonPresent()
 end
 
 local function Update()
@@ -510,29 +581,41 @@ events:SetScript("OnEvent", function(_, event)
         -- InCombatLockdown() can still be false during REGEN_DISABLED.
         inCombat = event == "PLAYER_REGEN_DISABLED"
         Update()
-    elseif event == "PLAYER_LOGOUT" or event == "PLAYER_CAMPING" or event == "PLAYER_QUITING" then
+    elseif event == "PLAYER_CAMPING" or event == "PLAYER_QUITING" then
         Restore(true)
     else
         OnPlayerChanged()
     end
 end)
 
+-- Load and logout run whether or not the plugin is on: crash recovery, and
+-- the baseline saved at every clean logout (after putting the camera back).
+local loader = CreateFrame("Frame")
+loader:RegisterEvent("ADDON_LOADED")
+loader:RegisterEvent("PLAYER_LOGOUT")
+loader:SetScript("OnEvent", function(self, event, name)
+    if event == "PLAYER_LOGOUT" then
+        Restore(true)
+        SaveBaseline()
+    elseif name == addonName then
+        self:UnregisterEvent("ADDON_LOADED")
+        RecoverFromCrash()
+    end
+end)
+
+local function CameraWanted()
+    return plugin.db.camera and plugin:IsLive() and not plugin:CameraAddonPresent()
+end
+
 -- Turned on in the settings: block the warning before the first use.
 function plugin:CameraSettingChanged()
-    if self.db.camera and self:IsLive() then BlockWarning() end
+    if CameraWanted() then BlockWarning() end
 end
 
 function plugin:InitCamera()
-    -- Left over from a crash or disconnect mid-conversation.
-    local leftover = self.db.cameraBackup
-    if leftover then
-        BlockWarning()
-        RestoreCVars(leftover)
-        self.db.cameraBackup = nil
-    end
     if self.cameraReady or not self:IsLive() then return end
     self.cameraReady = true
-    if self.db.camera then BlockWarning() end
+    if CameraWanted() then BlockWarning() end
     for _, name in ipairs(WINDOWS) do
         local frame = _G[name]
         if frame then
@@ -541,7 +624,7 @@ function plugin:InitCamera()
         end
     end
     for _, event in ipairs({ "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED",
-            "PLAYER_LOGOUT", "PLAYER_CAMPING", "PLAYER_QUITING" }) do
+            "PLAYER_CAMPING", "PLAYER_QUITING" }) do
         pcall(events.RegisterEvent, events, event)
     end
     Update()

@@ -69,6 +69,34 @@ local function GossipScrollBox()
     return panel and panel.ScrollBox
 end
 
+-- Callbacks on the gossip list's ScrollBox (keys and badges), registered only
+-- in keyboard & mouse mode, so Blizzard's own list is untouched under the
+-- controller UI. Synced when the input mode changes and when the window opens.
+local gossipCallbacks = {}   -- [owner] = fn
+local gossipRegistered = false
+
+local function GossipScrollEvent()
+    return ScrollBoxListMixin and ScrollBoxListMixin.Event and ScrollBoxListMixin.Event.OnDataRangeChanged
+end
+
+local function SyncGossipCallbacks()
+    local box, event = GossipScrollBox(), GossipScrollEvent()
+    if not (box and event and box.RegisterCallback and box.UnregisterCallback) then return end
+    local want = plugin:KeyboardMode()
+    if want == gossipRegistered then return end
+    gossipRegistered = want
+    for owner, fn in pairs(gossipCallbacks) do
+        if want then box:RegisterCallback(event, fn, owner) else box:UnregisterCallback(event, owner) end
+    end
+end
+
+function plugin:AddGossipScrollCallback(owner, fn)
+    gossipCallbacks[owner] = fn
+    local box, event = GossipScrollBox(), GossipScrollEvent()
+    if gossipRegistered and box and event then box:RegisterCallback(event, fn, owner) end
+    SyncGossipCallbacks()
+end
+
 -- The gossip list in Blizzard's order (available quests, active quests,
 -- options), as element data with .index.
 local function GossipEntries()
@@ -375,12 +403,10 @@ function plugin:InitKeys()
     end
     -- The gossip list scrolled or re-laid out: put the highlight back on
     -- whichever recycled row now shows the focused entry.
-    local scrollBox = GossipScrollBox()
-    if scrollBox and scrollBox.RegisterCallback and ScrollBoxListMixin and ScrollBoxListMixin.Event then
-        scrollBox:RegisterCallback(ScrollBoxListMixin.Event.OnDataRangeChanged, function()
-            if focus and Context() == "gossip" then ShowHighlight() end
-        end, plugin)
-    end
+    plugin:AddGossipScrollCallback(plugin, function()
+        if focus and Context() == "gossip" then ShowHighlight() end
+    end)
+    if GossipFrame then GossipFrame:HookScript("OnShow", SyncGossipCallbacks) end
 
     hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip, parent)
         if not (tooltip and tooltip.SetOwner) or tooltip:IsForbidden() then return end
@@ -404,7 +430,8 @@ function plugin:InitKeys()
             inCombat = false
             Update()
         else
-            C_Timer.After(0, Update)   -- switched between controller and keyboard
+            -- switched between controller and keyboard
+            C_Timer.After(0, function() SyncGossipCallbacks(); Update() end)
         end
     end)
     Update()

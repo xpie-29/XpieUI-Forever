@@ -186,7 +186,7 @@ One fixed behaviour, the user's chosen setup: zoom in on the speaker, turn to th
 
    The camera only zooms in, never out. The zoom from before is saved with `GetCameraZoom()`.
 3. **Turn to the speaker.**
-   - Blizzard's interact-focus camera: `test_cameraTargetFocusInteractEnable` 1, pitch strength eased 0 → 1, `pitchlimit` eased 88 → 15 and released at the end.
+   - Blizzard's interact-focus camera: `test_cameraTargetFocusInteractEnable` 1, pitch strength eased 0 → 1, `pitchlimit` eased from the player's value (88 if the client can't read it) → 15 and put back at the end.
    - `test_cameraOverShoulder` ±1.5 moves the speaker away from the window's side of the screen.
    - Field of view eased to 75 (not while mounted or gliding).
    - `CameraKeepCharacterCentered`, `CameraReduceUnexpectedMovement` and `test_cameraHeadMovementStrength` are set to 0. Every value is saved first and restored.
@@ -195,14 +195,14 @@ One fixed behaviour, the user's chosen setup: zoom in on the speaker, turn to th
 5. **Put it back** when the window closes: everything eases back the same way, then every saved value is set exactly.
    - **Gossip → quest:** going from gossip to a quest page counts as one conversation (0.15 s grace), so the camera doesn't bounce. A window reopened while easing back carries on from there.
    - **Combat and logout:** everything is restored at once. After combat, if the window is still open, it eases in again (as Hide UI does).
-   - **Crash:** the saved values are kept in `XpieUIForeverDB` while a conversation is on and restored at the next login (only effective if the saved variables were written; not verified).
+   - **Crash:** saved variables only reach disk at logout, so a backup made mid-conversation is never on disk after a crash. Instead, every clean logout saves the player's own values (`cameraBaseline`). At the next load, whether or not the plugin is on, a setting that differs from the baseline and holds a value the camera sets is put back. Whether the client keeps camera settings through a crash at all is not verified.
 6. **Mounted and shapeshifted:** mounted, the shoulder offset is scaled so the speaker stays clear of the window; druid forms use their own offsets. It works in instances too.
-7. **DynamicCam:** the camera stands down while it's loaded.
+7. **Camera addons** (`CAMERA_ADDONS` in `Quest.lua`, for now DynamicCam): the camera stands down while one is loaded or enabled, and crash recovery leaves their settings alone.
 
 **Blizzard's experimental-camera warning popup:** players never see it.
 - **The call:** `GameEvent.UnregisterInternalEvent("EXPERIMENTAL_CVAR_CONFIRMATION_NEEDED")`. `GameEvent.UnregisterInternalEvent` is Blizzard's own function (`Blizzard_Game/Shared/EventRouting.lua:25`) for removing one of its internal event handlers, which is where Forever's popup comes from.
 - **Not `UIParent:UnregisterEvent(...)`:** that does nothing on Forever. The probe showed UIParent doesn't listen for this event.
-- **When:** at our `ADDON_LOADED`, as soon as the saved settings are readable, if the camera is on (or camera values are waiting to be restored); also when the camera is turned on in the settings. The camera never touches a `test_camera*` setting unless the block worked.
+- **When:** only when the camera will be used: at login when the plugin is running with the camera on and no camera addon, when the camera is turned on in the settings, or when crash recovery has to put back a `test_camera*` setting. It doesn't run while the plugin waits for the quest-addon choice or is off. The camera never touches a `test_camera*` setting unless the block worked.
 - **Side effect:** Blizzard's experimental-camera warning won't show for the rest of the session for any reason.
 - **No other popup handling:** no `StaticPopup_Hide`, and no hiding of the popup frame.
 

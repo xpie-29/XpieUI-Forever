@@ -24,6 +24,12 @@ local INCOMPATIBLE = {
     "Immersion",
 }
 
+-- Camera addons the Speaker Camera stands down for (it would fight their
+-- camera settings). Folder names, also shown in the setting's text.
+local CAMERA_ADDONS = {
+    "DynamicCam",
+}
+
 local plugin = core:RegisterPlugin("quest", {
     title       = "Quest Windows",
     description = "Blizzard's quest, gossip and book windows with one shared position you can move.",
@@ -35,7 +41,8 @@ local plugin = core:RegisterPlugin("quest", {
         spoken   = true,  -- Spoken Integration (only when Spoken is installed)
         spokenLight = "ffffff",   -- Parchment Highlight: white: Spoken's deep red
         spokenDark  = "ffd100",   -- Dark Highlight: Spoken's gold
-        -- cameraBackup: camera settings to put back, kept only mid-conversation
+        -- cameraBaseline: the player's own camera settings, saved at each clean
+        -- logout, to put right a crash mid-conversation (Camera.lua)
         -- point: { left, top } of the windows in UIParent units (absent =
         -- where Blizzard puts them). Set by dragging or Move Windows.
     },
@@ -65,6 +72,20 @@ end
 -- The ones in the AddOns folder, and the ones running now.
 function plugin:InstalledOthers() return Filter(IsInstalled) end
 function plugin:LoadedOthers() return Filter(IsLoaded) end
+
+-- A camera addon loaded, or enabled for this character (at our own load,
+-- one that loads after us isn't loaded yet).
+function plugin:CameraAddonPresent()
+    local character = UnitName("player")
+    for _, name in ipairs(CAMERA_ADDONS) do
+        if IsLoaded(name) then return true end
+        if IsInstalled(name) and C_AddOns.GetAddOnEnableState then
+            local ok, state = pcall(C_AddOns.GetAddOnEnableState, name, character)
+            if ok and (tonumber(state) or 0) > 0 then return true end
+        end
+    end
+    return false
+end
 
 function plugin:OtherAddonLoaded()
     return #self:LoadedOthers() > 0
@@ -161,7 +182,7 @@ function plugin:BuildSettings(page)
 
     page:Header("Camera")
     page:Checkbox({ key = "camera", label = "Speaker Camera",
-        description = "While talking to an NPC, the camera turns to them, moves them to the side away from the window and zooms in a little (never out). It goes back when the window closes, or at once if combat starts. Off while DynamicCam is loaded." })
+        description = "While talking to an NPC, the camera turns to them, moves them to the side away from the window and zooms in a little (never out). It goes back when the window closes, or at once if combat starts. Off while " .. table.concat(CAMERA_ADDONS, " or ") .. " is loaded." })
 
     if self:SpokenAvailable() then
         page:Header("Spoken")
