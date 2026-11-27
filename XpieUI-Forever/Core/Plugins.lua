@@ -133,23 +133,22 @@ function addon:OnPlayerLogin()
     end
 end
 
--- Turning a plugin on or off: saved now, applied on /reload.
-StaticPopupDialogs["XPIEUI_RELOAD"] = {
-    text = "XpieUI Forever: reload the interface to apply this change?",
-    button1 = RELOADUI or "Reload UI",
-    button2 = LATER or "Later",
-    OnAccept = function() ReloadUI() end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-}
+-- Turning a plugin on or off: saved now, applied on /reload. No StaticPopup:
+-- an addon-defined popup taints Blizzard's gamepad UI when it closes
+-- (ADDON_ACTION_FORBIDDEN on SetPreferredGamepadInteractTarget). The settings
+-- window shows a Reload UI button instead.
+function addon:NeedsReload()
+    for _, plugin in ipairs(self.plugins) do
+        if plugin.db and (plugin.db.enabled and true or false) ~= plugin.active then
+            return true
+        end
+    end
+    return false
+end
 
 function addon:SetPluginEnabled(plugin, enabled)
     enabled = not not enabled
     if plugin.db.enabled == enabled then return end
     plugin.db.enabled = enabled
     self:RefreshSettings()
-    if enabled ~= plugin.active then
-        StaticPopup_Show("XPIEUI_RELOAD")
-    end
 end
