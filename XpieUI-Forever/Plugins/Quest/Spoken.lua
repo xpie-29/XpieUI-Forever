@@ -196,6 +196,6 @@ function plugin:InitSpoken()
             pcall(Api().RegisterCallback, Api(), event, Refresh)
         end
     end
-    self:InitSpokenWords()
+    if self.InitSpokenWords then self:InitSpokenWords() end
     Refresh()
 end

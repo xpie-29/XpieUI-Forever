@@ -37,7 +37,7 @@ Not used: the Parchment addon, its 6 MB of masks, the quest-look hand-off, Guide
 
 ## The plugin
 
-- **Files:** `Plugins/Quest/` holds `Quest.lua` (registration, settings, status, the incompatible-addons list), `Choice.lua` (the choice window), `Position.lua`, `Fonts.lua`, `HideUI.lua`, `Camera.lua`, `Keys.lua`, `Badges.lua` and `Spoken.lua`.
+- **Files:** `Plugins/Quest/` holds `Quest.lua` (registration, settings, status, the incompatible-addons list), `Choice.lua` (the choice window), `Position.lua`, `Fonts.lua`, `HideUI.lua`, `Camera.lua`, `Keys.lua`, `Badges.lua`, `Spoken.lua` (setting and controls row) and `SpokenWords.lua` (word highlighting, Spoken's player).
 - **Registration:** `RegisterPlugin("quest", {...})` with no target addon, because it works on Blizzard's own windows.
 - **If an incompatible addon is loaded,** the user picks which quest module to use (section 0).
 
@@ -215,8 +215,8 @@ The integration is turned on automatically when Spoken is installed, and turned 
 | Setting | Default |
 |---|---|
 | Spoken Integration | **on** when Spoken is loaded; hidden when it isn't |
-| Highlight Colour (parchment) | Spoken's deep red `#9c1a1a` |
-| Highlight Colour (dark) | Spoken's gold `#ffd100` |
+| Parchment Highlight | Spoken's deep red `#9c1a1a` |
+| Dark Highlight | Spoken's gold `#ffd100` |
 
 - **On:** Spoken's controls sit at the top of our window, the words are highlighted in our window's text, and the small tooltip-style box takes over when the window closes mid-line.
 - **Off:** none of that is drawn. We call `Spoken:SetPlayerHost(nil)`, and Spoken works exactly as it does on its own: its own player window and subtitles, its own settings.
@@ -249,11 +249,15 @@ It's built on Spoken's documented public API (`Spoken/API.lua`, `API_VERSION` 1)
 - **Finding and matching the line:** `Spoken:GetCaption()` gives the line's words and the word being spoken. `Spoken:WordMarks()` gives `Align`, `Pick`, `Cut`, `Spans` and `Want`, which match them to our window's text.
 - **Which text:** quest description, objectives, progress and reward text, the gossip greeting, the quest greeting, and book pages.
 - **Map safety:** QuestInfo's frames are shared with the world map, so we only mark them while `QuestFrame` owns them, and always put the clean text back first. This avoids XpieHUD's old map taint.
-- **Scrolling:** the window scrolls to keep the word being read in view (Spoken's AutoScroll behaviour).
+- **Scrolling:** the window scrolls to keep the word being read in view (Spoken's AutoScroll behaviour). If the player scrolls the window themselves, it stops following until the next line.
+- **Type Words Out:** a paragraph being typed out holds its full height (it's pinned with `SetHeight` and released to auto height afterwards), because Blizzard anchors the objectives, rewards and quest list below these texts.
+- **Not done:** Spoken's own bridge blanks the words before the voice starts, using Spoken Quests internals; with only the public API, the text shows whole until the line starts.
+- **HTML book pages** are left unmarked: marks would land inside their tags.
+- **Built (Delivery 6b):** `SpokenWords.lua`. The colour control is `page:ColorChoice` in `Core/Widgets.lua`.
 
 **Spoken's own player while the integration is on:**
 - **The aim:** Spoken's own player and subtitles shouldn't show alongside ours.
-- **The method:** we host them on a hidden frame of ours with `Spoken:SetPlayerHost(frame)`, the public call Spoken made for hosts that hide UIParent.
+- **The method:** we host them on a hidden frame of ours with `Spoken:SetPlayerHost(frame)`, the public call Spoken made for hosts that hide UIParent. This happens while a quest, gossip or book window is open (given back 0.15s after the last one closes), so a line the window doesn't show (zone lore, say) has no words on screen meanwhile.
 - **Turning it off** calls `SetPlayerHost(nil)`, and Spoken's normal setup comes back. We never change Spoken's saved settings.
 - **Probe result:** `SetPlayerHost(hiddenFrame)` hides both Spoken's player and its subtitles. No fallback is needed.
 

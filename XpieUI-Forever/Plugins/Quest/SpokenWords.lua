@@ -5,13 +5,17 @@
 --
 --   Matching    Spoken's helper (Spoken:WordMarks: Align, Pick, Cut, Spans,
 --               Want) finds the line from Spoken:GetCaption() in our text
---   Drawing     colour codes written into the text itself, so nothing moves
---               or rewraps; the text Blizzard set goes back when the line
---               ends, the page changes or the window closes. Spoken's Type
---               Words Out is honoured the same way.
---   Colours     Highlight Colour (parchment) on dark text, Highlight Colour
---               (dark) on light text (Quest Text Contrast, stone books)
---   Scrolling   the window scrolls to keep the word being read in view
+--   Drawing     colour codes written into the text itself, so nothing
+--               rewraps; the text Blizzard set goes back when the line ends,
+--               the page changes or the window closes. Spoken's Type Words
+--               Out is honoured the same way: a paragraph being typed out
+--               keeps its full height, so what Blizzard anchors below it
+--               (objectives, rewards, the quest list) stays put.
+--   Colours     Parchment Highlight on dark text, Dark Highlight on light
+--               text (Quest Text Contrast, stone books)
+--   Scrolling   the window scrolls to keep the word being read in view,
+--               until the player scrolls it themselves (then until the
+--               next line)
 --   Player      hosted on a hidden frame (Spoken:SetPlayerHost) while a
 --               window is open, given back when it closes
 --
@@ -162,12 +166,25 @@ local function Collect()
 end
 
 local function SetRegionText(para, text)
+    local region = para.region
     if para.book then
         settingOurs = true
-        para.region:SetText(text)
+        region:SetText(text)
         settingOurs = false
     else
-        para.region:SetText(text)
+        -- These size to their text (height 0 in Blizzard's XML). Cut short,
+        -- they'd pull up everything anchored below them, so they hold their
+        -- full height until the whole text is back.
+        local cut = #text < #para.text
+        if cut and not para.pinned then
+            para.pinned = true
+            region:SetHeight(region:GetHeight())
+        end
+        region:SetText(text)
+        if not cut and para.pinned then
+            para.pinned = nil
+            region:SetHeight(0)
+        end
     end
     para.shown = text
 end
@@ -182,6 +199,9 @@ local function Restore()
     for _, para in ipairs(state.paragraphs or {}) do
         if para.shown ~= para.text and StillOurs(para) then
             SetRegionText(para, para.text)
+        elseif para.pinned then
+            para.pinned = nil
+            para.region:SetHeight(0)
         end
         para.shown = para.text
     end
@@ -191,7 +211,7 @@ end
 local function Invalidate()
     Restore()
     state.paragraphs, state.clip, state.map, state.span = nil, nil, nil, nil
-    state.dirty, state.scrolledTo = true, nil
+    state.dirty, state.scrolledTo, state.scrollSet, state.userScrolled = true, nil, nil, nil
 end
 plugin.InvalidateSpokenWords = Invalidate
 
@@ -201,6 +221,12 @@ plugin.InvalidateSpokenWords = Invalidate
 local function ScrollTo(para, word)
     local scroll = para.scroll
     if not (scroll and scroll.GetVerticalScroll and scroll:IsVisible()) then return end
+    -- The player scrolled since we last did: leave it to them for this line.
+    local set = state.scrollSet
+    if state.userScrolled or (set and set.frame == scroll and math.abs((scroll:GetVerticalScroll() or 0) - set.value) > 1) then
+        state.userScrolled = true
+        return
+    end
     local child = scroll:GetScrollChild()
     local childTop, top, bottom = child and child:GetTop(), para.region:GetTop(), para.region:GetBottom()
     if not (childTop and top and bottom) then return end
@@ -211,7 +237,9 @@ local function ScrollTo(para, word)
     local current = scroll:GetVerticalScroll() or 0
     if y >= current and y <= current + view * SCROLL_EDGE then return end
     local range = scroll:GetVerticalScrollRange() or 0
-    scroll:SetVerticalScroll(math.max(0, math.min(range, y - view * SCROLL_LEAD)))
+    local value = math.max(0, math.min(range, y - view * SCROLL_LEAD))
+    scroll:SetVerticalScroll(value)
+    state.scrollSet = { frame = scroll, value = scroll:GetVerticalScroll() or value }
 end
 
 -- ---------------------------------------------------------------------------
@@ -257,6 +285,7 @@ local function Tick()
         if clip ~= state.clip then
             Restore()
             state.clip, state.scrolledTo = clip, nil
+            state.scrollSet, state.userScrolled = nil, nil
             state.map, state.span = marks.Align(caption.words, state.paragraphs)
         end
     else
