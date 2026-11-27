@@ -15,7 +15,7 @@ local plugin = core.questPlugin
 
 local MAX_CHOICES = 19
 local ICON_DIM = 0.3     -- option icon alpha under its number
-local HINT_GAP, HINT_Y = 5, -2
+local HINT_GAP = 5
 
 -- Our own font objects, so scaling them never touches Blizzard's.
 local FONTS = {
@@ -117,15 +117,27 @@ local function RefreshHints(show)
             if not hint and show then
                 hint = button:CreateFontString(nil, "OVERLAY")
                 hint:SetFontObject(FONTS.hint.object)
-                if onRight then
-                    hint:SetPoint("LEFT", button, "RIGHT", HINT_GAP, HINT_Y)
-                else
-                    hint:SetPoint("RIGHT", button, "LEFT", -HINT_GAP, HINT_Y)
-                end
                 hint:SetText(text)
                 hints[button] = hint
             end
-            if hint then hint:SetShown(show and (text ~= "Space" or SpaceWouldAct())) end
+            if hint then
+                local visible = show and (text ~= "Space" or SpaceWouldAct())
+                if visible then
+                    -- Vertically centred on the button's own label, wherever
+                    -- the button's art puts it.
+                    local label = button:GetFontString()
+                    local _, labelY = label and label:GetCenter()
+                    local _, buttonY = button:GetCenter()
+                    local y = (labelY and buttonY) and (labelY - buttonY) or 0
+                    hint:ClearAllPoints()
+                    if onRight then
+                        hint:SetPoint("LEFT", button, "RIGHT", HINT_GAP, y)
+                    else
+                        hint:SetPoint("RIGHT", button, "LEFT", -HINT_GAP, y)
+                    end
+                end
+                hint:SetShown(visible)
+            end
         end
     end
 end
