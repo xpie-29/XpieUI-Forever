@@ -33,6 +33,8 @@ local plugin = core:RegisterPlugin("quest", {
         keyboard = true,  -- keyboard controls, badges and hints (keyboard & mouse only)
         camera   = true,  -- Speaker Camera
         spoken   = true,  -- Spoken Integration (only when Spoken is installed)
+        spokenLight = "9c1a1a",   -- Highlight Colour (parchment): Spoken's deep red
+        spokenDark  = "ffd100",   -- Highlight Colour (dark): Spoken's gold
         -- cameraBackup: camera settings to put back, kept only mid-conversation
         -- point: { left, top } of the windows in UIParent units (absent =
         -- where Blizzard puts them). Set by dragging or Move Windows.
@@ -164,7 +166,24 @@ function plugin:BuildSettings(page)
     if self:SpokenAvailable() then
         page:Header("Spoken")
         page:Checkbox({ key = "spoken", label = "Spoken Integration",
-            description = "Spoken's controls (Play/Stop, Previous, Next and Report) sit at the top of the quest, gossip and book windows. Off: Spoken works exactly as it does on its own." })
+            description = "Spoken's controls (Play/Stop, Previous, Next and Report) sit at the top of the quest, gossip and book windows, and the words being read are highlighted in the window's own text. Spoken's own player and subtitles stay hidden while a window is open. Off: Spoken works exactly as it does on its own." })
+        local swatches = {
+            { hex = "9c1a1a", name = "Spoken Red" },
+            { hex = "ffd100", name = "Gold" },
+            { hex = "1f5fbf", name = "Quest Blue" },
+            { hex = "1e7a1e", name = "Green" },
+            { hex = "ffffff", name = "White" },
+            { hex = "2b1a0e", name = "Black-Brown" },
+        }
+        page:ColorChoice({ key = "spokenLight", label = "Highlight Colour (parchment)", swatches = swatches,
+            description = "The words being read, on Blizzard's parchment pages. Pick a swatch or type a hex colour (rrggbb)." })
+        page:ColorChoice({ key = "spokenDark", label = "Highlight Colour (dark)", swatches = swatches,
+            description = "The words being read on dark pages: Quest Text Contrast's dark parchment, stone and metal books." })
+        page:Button("Reset Colours", function()
+            plugin.db.spokenLight, plugin.db.spokenDark = plugin.SPOKEN_LIGHT, plugin.SPOKEN_DARK
+            plugin:Apply()
+            core:RefreshSettings()
+        end)
     end
 
     page:Header("Keyboard")

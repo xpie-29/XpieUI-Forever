@@ -5,6 +5,7 @@
 --
 --   Controls    Spoken's own row (Play/Stop, Previous, Next, Report) in the
 --               band under the title bar, towards the right
+--   Words       SpokenWords.lua: the words being read marked in the text
 --
 -- Off (or Spoken not installed): nothing is drawn and Spoken works exactly
 -- as it does on its own.
@@ -38,6 +39,7 @@ end
 local function On()
     return plugin:IsLive() and plugin.db.spoken and plugin:SpokenAvailable()
 end
+plugin.SpokenApi, plugin.SpokenOn = Api, On
 
 local function Words()
     local spoken = Api()
@@ -170,7 +172,10 @@ function Refresh()
         if window then RefreshWindow(window) end
     end
 end
-plugin.UpdateSpoken = function() Refresh() end
+plugin.UpdateSpoken = function()
+    Refresh()
+    if plugin.UpdateSpokenWords then plugin.UpdateSpokenWords() end
+end
 
 function plugin:InitSpoken()
     if not self:IsLive() or not self:SpokenAvailable() then return end
@@ -191,5 +196,6 @@ function plugin:InitSpoken()
             pcall(Api().RegisterCallback, Api(), event, Refresh)
         end
     end
+    self:InitSpokenWords()
     Refresh()
 end
