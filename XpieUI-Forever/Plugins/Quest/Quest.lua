@@ -9,6 +9,7 @@
 --   * Camera.lua    the camera turns to the speaker and zooms in a little
 --   * Keys.lua      keyboard controls and tooltips at the cursor (keyboard
 --                   & mouse only), Badges.lua their numbers and key hints
+--   * Spoken.lua    Spoken's controls on the windows (when Spoken is installed)
 --
 -- The module has no target addon: it works on Blizzard's frames. It stands
 -- down (no hooks act) while one of those is loaded, until the player picks.
@@ -31,6 +32,7 @@ local plugin = core:RegisterPlugin("quest", {
         hideUI   = true,  -- fade the rest of the UI while a window is open
         keyboard = true,  -- keyboard controls, badges and hints (keyboard & mouse only)
         camera   = true,  -- Speaker Camera
+        spoken   = true,  -- Spoken Integration (only when Spoken is installed)
         -- cameraBackup: camera settings to put back, kept only mid-conversation
         -- point: { left, top } of the windows in UIParent units (absent =
         -- where Blizzard puts them). Set by dragging or Move Windows.
@@ -159,6 +161,12 @@ function plugin:BuildSettings(page)
     page:Checkbox({ key = "camera", label = "Speaker Camera",
         description = "While talking to an NPC, the camera turns to them, moves them to the side away from the window and zooms in a little (never out). It goes back when the window closes, or at once if combat starts. Off while DynamicCam is loaded." })
 
+    if self:SpokenAvailable() then
+        page:Header("Spoken")
+        page:Checkbox({ key = "spoken", label = "Spoken Integration",
+            description = "Spoken's controls (Play/Stop, Previous, Next and Report) sit in the title bar of the quest, gossip and book windows. Off: Spoken works exactly as it does on its own." })
+    end
+
     page:Header("Keyboard")
     page:Checkbox({ key = "keyboard", label = "Keyboard Controls",
         description = "Keyboard & mouse only (off while the controller UI is on): W/S or arrows move the highlight, A/D move across rewards or turn book pages, Space picks or accepts, 1-9 pick directly, Esc closes. Adds number badges and Space/Esc hints." })
@@ -196,6 +204,7 @@ function plugin:OnLogin()
         self:InitCamera()
         self:InitKeys()
         self:InitBadges()
+        self:InitSpoken()
         self:Apply()
     end
 end
@@ -208,4 +217,5 @@ function plugin:Apply()
     self:CameraSettingChanged()
     if self.UpdateCamera then self.UpdateCamera() end
     if self.UpdateKeys then self.UpdateKeys() end
+    if self.UpdateSpoken then self.UpdateSpoken() end
 end
