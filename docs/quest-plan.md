@@ -186,7 +186,7 @@ One fixed behaviour, the user's chosen setup: zoom in on the speaker, turn to th
 
    The camera only zooms in, never out. The zoom from before is saved with `GetCameraZoom()`.
 3. **Turn to the speaker.**
-   - Blizzard's interact-focus camera: `test_cameraTargetFocusInteractEnable` 1, pitch strength eased 0 → 1, `pitchlimit` eased 88 → 15 and released at the end.
+   - Blizzard's interact-focus camera: `test_cameraTargetFocusInteractEnable` 1, pitch strength eased 0 → 1, `pitchlimit` eased from the player's value (88 if the client can't read it) → 15 and put back at the end.
    - `test_cameraOverShoulder` ±1.5 moves the speaker away from the window's side of the screen.
    - Field of view eased to 75 (not while mounted or gliding).
    - `CameraKeepCharacterCentered`, `CameraReduceUnexpectedMovement` and `test_cameraHeadMovementStrength` are set to 0. Every value is saved first and restored.
@@ -195,14 +195,14 @@ One fixed behaviour, the user's chosen setup: zoom in on the speaker, turn to th
 5. **Put it back** when the window closes: everything eases back the same way, then every saved value is set exactly.
    - **Gossip → quest:** going from gossip to a quest page counts as one conversation (0.15 s grace), so the camera doesn't bounce. A window reopened while easing back carries on from there.
    - **Combat and logout:** everything is restored at once. After combat, if the window is still open, it eases in again (as Hide UI does).
-   - **Crash:** the saved values are kept in `XpieUIForeverDB` while a conversation is on and restored at the next login (only effective if the saved variables were written; not verified).
+   - **Crash:** saved variables only reach disk at logout, so a backup made mid-conversation is never on disk after a crash. Instead, every clean logout saves the player's own values (`cameraBaseline`). At the next load, whether or not the plugin is on, a setting that differs from the baseline and holds a value the camera sets is put back. Whether the client keeps camera settings through a crash at all is not verified.
 6. **Mounted and shapeshifted:** mounted, the shoulder offset is scaled so the speaker stays clear of the window; druid forms use their own offsets. It works in instances too.
-7. **DynamicCam:** the camera stands down while it's loaded.
+7. **Camera addons** (`CAMERA_ADDONS` in `Quest.lua`, for now DynamicCam): the camera stands down while one is loaded or enabled, and crash recovery leaves their settings alone.
 
 **Blizzard's experimental-camera warning popup:** players never see it.
 - **The call:** `GameEvent.UnregisterInternalEvent("EXPERIMENTAL_CVAR_CONFIRMATION_NEEDED")`. `GameEvent.UnregisterInternalEvent` is Blizzard's own function (`Blizzard_Game/Shared/EventRouting.lua:25`) for removing one of its internal event handlers, which is where Forever's popup comes from.
 - **Not `UIParent:UnregisterEvent(...)`:** that does nothing on Forever. The probe showed UIParent doesn't listen for this event.
-- **When:** at our `ADDON_LOADED`, as soon as the saved settings are readable, if the camera is on (or camera values are waiting to be restored); also when the camera is turned on in the settings. The camera never touches a `test_camera*` setting unless the block worked.
+- **When:** only when the camera will be used: at login when the plugin is running with the camera on and no camera addon, when the camera is turned on in the settings, or when crash recovery has to put back a `test_camera*` setting. It doesn't run while the plugin waits for the quest-addon choice or is off. The camera never touches a `test_camera*` setting unless the block worked.
 - **Side effect:** Blizzard's experimental-camera warning won't show for the rest of the session for any reason.
 - **No other popup handling:** no `StaticPopup_Hide`, and no hiding of the popup frame.
 
@@ -262,6 +262,12 @@ It's built on Spoken's documented public API (`Spoken/API.lua`, `API_VERSION` 1)
 - **The method:** we host them on a hidden frame of ours with `Spoken:SetPlayerHost(frame)`, the public call Spoken made for hosts that hide UIParent. This happens while a quest, gossip or book window is open (given back 0.15s after the last one closes), so a line the window doesn't show (zone lore, say) has no words on screen meanwhile.
 - **Turning it off** calls `SetPlayerHost(nil)`, and Spoken's normal setup comes back. We never change Spoken's saved settings.
 - **Probe result:** `SetPlayerHost(hiddenFrame)` hides both Spoken's player and its subtitles. No fallback is needed.
+
+**The XpieUI narrator style:** without it, lines no quest window shows (zone lore, bosses, books, chatter) appear in Spoken's own player, or nowhere while a window is open.
+- **How it works:** the small box is registered as a Spoken narrator style, "XpieUI" (`Spoken:RegisterNarrator`, Public API). When the player picks it in Spoken's settings, Spoken shows none of its own windows and passes every line to the box. `Spoken:SuggestNarrator` offers it once, ever, in Spoken's own window.
+- **Where a line shows:** a quest, gossip or book window keeps a line it shows itself (`SpokenWindowHolds`; 0.4s grace while a page is matched). Any other line shows in the box, whether a window is open or not.
+- **Hosting:** while it's the style, `SetPlayerHost` isn't used. There's nothing of Spoken's to hide, and hosting would stop its narrator updates.
+- **With the Spoken Integration setting off:** the box still narrates, because the player chose the style in Spoken. The rows and the window highlighting are off.
 
 **The small tooltip-style box** (the user's screenshot 1): if the window closes while a line is still being read, the line carries on in a small box.
 - **Look:** Blizzard's tooltip look (`TooltipDefaultLayout` NineSlice, GameTooltip fonts).

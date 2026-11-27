@@ -210,5 +210,6 @@ function plugin:InitSpoken()
         end
     end
     if self.InitSpokenWords then self:InitSpokenWords() end
+    if self.db.spoken and self.SuggestSpokenNarrator then self.SuggestSpokenNarrator() end
     Refresh()
 end

@@ -1,7 +1,15 @@
 -- SpokenBox.lua  (XpieUI-Forever, Quest module)
--- Spoken Integration, part three: when a quest, gossip or book window closes
--- while its line is still being read, the line carries on in a small box in
--- Blizzard's tooltip look, at the top centre of the screen.
+-- Spoken Integration, part three: a small box in Blizzard's tooltip look, at
+-- the top centre of the screen, for the lines no quest window shows.
+--
+--   Narrator    the box is also a Spoken narrator style ("XpieUI",
+--               Spoken:RegisterNarrator). Chosen in Spoken's settings, Spoken
+--               shows none of its own windows and hands every line here:
+--               zone lore, bosses, books, chatter. A quest, gossip or book
+--               window that shows the line itself keeps it; any other line
+--               shows in the box, with the window open or not.
+--   Hand-off    with another narrator style, a window closing while its
+--               line is still being read passes the line to the box
 --
 --   Contents    the speaker's round face (Spoken:CreateSpeakerFace), the
 --               speaker and the quest title, Spoken's control row, and the
@@ -11,8 +19,12 @@
 --
 -- Named XpieUIForever... so Hide UI While Talking leaves it alone.
 
+local addonName = ...
 local core = XpieUI
 local plugin = core.questPlugin
+
+local NARRATOR_ID = "xpieui"
+local WATCH_TICK = 0.1
 
 local WIDTH = 340
 local PAD = 10
@@ -30,6 +42,8 @@ local box, face, header, label, scroll, child, text
 local line                  -- { clip, paragraphs, map, span, lit, neighbor, cutP, cutByte, full }
 local fading = nil          -- seconds into the fade-out
 local elapsedSince = 0
+local narratorClip          -- the line Spoken last handed us as the narrator
+local watcher = CreateFrame("Frame")
 
 local function Api() return plugin.SpokenApi and plugin.SpokenApi() end
 
@@ -172,13 +186,20 @@ local function Tick(elapsed)
     elapsedSince = elapsedSince + elapsed
     if elapsedSince < TICK then return end
     elapsedSince = 0
-    -- The line ended, was skipped or another took its place.
     local caption = Call("GetCaption")
-    if not caption or caption.clip ~= line.clip or Call("GetCurrent") ~= line.clip then
+    if line.narrated then
+        -- Spoken says when the line ends (Update(nil) or the next line).
+        if not (caption and caption.clip == line.clip) then return end
+    elseif not caption or caption.clip ~= line.clip or Call("GetCurrent") ~= line.clip then
+        -- The line ended, was skipped or another took its place.
         FadeOut()
         return
     end
     local marks = plugin.SpokenMarks and plugin.SpokenMarks()
+    if marks and line.paragraphs and not line.map then
+        line.map, line.span = marks.Align(caption.words, line.paragraphs)
+        line.force = true
+    end
     if marks and (caption.highlight or caption.typewriter) then Draw(marks, caption) end
 end
 
@@ -190,25 +211,31 @@ local function OnUpdate(_, elapsed)
     end
 end
 
--- offer = { clip, left, top, scale } from the window that closed. True when
--- the box took the line.
-function plugin.ShowSpokenBox(offer)
-    local clip = offer and offer.clip
+-- Show `clip` in the box. narrated: handed over by Spoken as the narrator,
+-- so it may have no text (header and face only) and its caption may come a
+-- moment later. True when the box took the line.
+local function ShowLine(clip, narrated)
+    if box and box:IsShown() and not fading and line and line.clip == clip then
+        line.narrated = narrated or line.narrated
+        return true
+    end
     local caption = Call("GetCaption")
-    if not (clip and caption and caption.clip == clip and Call("GetCurrent") == clip) then return false end
+    local captioned = caption and caption.clip == clip
+    if not narrated and not (captioned and Call("GetCurrent") == clip) then return false end
     local present = type(clip.present) == "table" and clip.present or {}
     local full = present.transcript or clip.text
-    if type(full) ~= "string" or full == "" then return false end
+    if type(full) ~= "string" then full = "" end
+    if full == "" and not narrated then return false end
     if not box then Build() end
 
-    line = { clip = clip, full = full, force = true }
+    line = { clip = clip, full = full, force = true, narrated = narrated }
     local marks = plugin.SpokenMarks and plugin.SpokenMarks()
     local spoken = Api()
-    if marks and spoken and spoken.SplitCaption then
+    if full ~= "" and marks and spoken and spoken.SplitCaption then
         local ok, words = pcall(spoken.SplitCaption, spoken, full)
         if ok and type(words) == "table" and #words > 0 then
             line.paragraphs = { { text = full, words = marks.MarkLinks and marks.MarkLinks(full, words) or words } }
-            line.map, line.span = marks.Align(caption.words, line.paragraphs)
+            if captioned then line.map, line.span = marks.Align(caption.words, line.paragraphs) end
         end
     end
 
@@ -227,6 +254,14 @@ function plugin.ShowSpokenBox(offer)
     return true
 end
 
+-- offer = { clip, left, top, scale } from the window that closed. True when
+-- the box took the line.
+function plugin.ShowSpokenBox(offer)
+    local clip = offer and offer.clip
+    if not clip then return false end
+    return ShowLine(clip, false)
+end
+
 -- instant: a window opened (it takes the line over) or the setting went off.
 function plugin.HideSpokenBox(instant)
     if not (box and box:IsShown()) then return end
@@ -235,4 +270,75 @@ end
 
 function plugin.SpokenBoxShown()
     return box ~= nil and box:IsShown() and not fading
+end
+
+-- ---------------------------------------------------------------------------
+-- Narrator style
+-- ---------------------------------------------------------------------------
+function plugin.SpokenNarratorActive()
+    return Call("GetPlayerStyle") == NARRATOR_ID
+end
+
+-- Where the narrator's line goes now: a window that shows it keeps it,
+-- otherwise the box.
+local function Decide()
+    local clip = narratorClip
+    if not clip then
+        if line and line.narrated then FadeOut() end
+        return
+    end
+    if plugin.SpokenWindowHolds and plugin.SpokenWindowHolds(clip) then
+        if box and box:IsShown() and line and line.narrated then Finish() end
+        return
+    end
+    ShowLine(clip, true)
+end
+
+-- Windows open and close, and pages turn, without Spoken telling us: look
+-- again a few times a second while there's a line.
+local watchSince = 0
+local function Watch(_, elapsed)
+    watchSince = watchSince + elapsed
+    if watchSince < WATCH_TICK then return end
+    watchSince = 0
+    if not narratorClip then
+        watcher:SetScript("OnUpdate", nil)
+        return
+    end
+    local ok, err = pcall(Decide)
+    if not ok then
+        watcher:SetScript("OnUpdate", nil)
+        geterrorhandler()(err)
+    end
+end
+
+local function NarratorUpdate(clip)
+    narratorClip = clip
+    Decide()
+    if clip then
+        watchSince = 0
+        watcher:SetScript("OnUpdate", Watch)
+    end
+    if plugin.UpdateSpokenWords then plugin.UpdateSpokenWords() end
+end
+
+-- Registered while we load (Spoken loads first: OptionalDeps), so the card is
+-- there when Spoken builds its narrator page.
+do
+    local spoken = Api() or (type(_G.Spoken) == "table" and _G.Spoken.IsCompatible
+        and _G.Spoken:IsCompatible(1) and _G.Spoken) or nil
+    if spoken and type(spoken.RegisterNarrator) == "function" then
+        pcall(spoken.RegisterNarrator, spoken, NARRATOR_ID, {
+            addon = addonName,
+            title = "XpieUI",
+            description = "A small box in Blizzard's tooltip look at the top of the screen, with the words "
+                .. "highlighted as they're read. Lines a quest, gossip or book window shows stay in that window.",
+            Update = function(clip) NarratorUpdate(clip) end,
+        })
+    end
+end
+
+-- Offered once, ever, by Spoken itself (never when it's the style already).
+function plugin.SuggestSpokenNarrator()
+    Call("SuggestNarrator", NARRATOR_ID)
 end
