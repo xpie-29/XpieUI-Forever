@@ -84,7 +84,7 @@ local function Animate(elapsed)
     fadeTime = fadeTime + elapsed
     local t = math.min(fadeTime / FADE_TIME, 1)
     for frame, step in pairs(fading) do
-        frame:SetAlpha(step.from + (step.to - step.from) * t)
+        if not frame:IsForbidden() then frame:SetAlpha(step.from + (step.to - step.from) * t) end
     end
     if t >= 1 then
         wipe(fading)
@@ -152,7 +152,9 @@ end
 local function FadeUI()
     if not keep then BuildKeep() end
     for _, frame in ipairs({ UIParent:GetChildren() }) do
-        if not faded[frame] and frame:IsShown() and not frame:IsForbidden() and not Keep(frame) then
+        -- IsForbidden first: it's the only call a forbidden (Blizzard-locked)
+        -- frame accepts from addon code.
+        if not frame:IsForbidden() and not faded[frame] and frame:IsShown() and not Keep(frame) then
             local alpha = frame:GetAlpha()
             -- Still fading back in from the last window: its real alpha is
             -- where that fade was heading.
@@ -171,17 +173,21 @@ end
 -- instant: combat, or the setting turned off.
 local function RestoreUI(instant)
     for frame, alpha in pairs(faded) do
-        -- Something else changed the alpha while we were faded: keep theirs.
-        local current = fading[frame] and 0 or frame:GetAlpha()
-        if current == 0 then
-            if instant then
-                fading[frame] = nil
-                frame:SetAlpha(alpha)
-            else
-                fading[frame] = { from = frame:GetAlpha(), to = alpha }
-            end
+        if frame:IsForbidden() then
+            fading[frame] = nil   -- locked since we faded it: leave it be
         else
-            fading[frame] = nil
+            -- Something else changed the alpha while we were faded: keep theirs.
+            local current = fading[frame] and 0 or frame:GetAlpha()
+            if current == 0 then
+                if instant then
+                    fading[frame] = nil
+                    frame:SetAlpha(alpha)
+                else
+                    fading[frame] = { from = frame:GetAlpha(), to = alpha }
+                end
+            else
+                fading[frame] = nil
+            end
         end
     end
     wipe(faded)
@@ -220,9 +226,11 @@ local function Update()
 end
 plugin.UpdateHideUI = Update
 
+-- Run on the next frame: the window's OnShow fires inside Blizzard's panel
+-- manager (ShowUIPanel), and nothing of ours should run inside that.
 local function OnWindowShow()
     restoreToken = restoreToken + 1
-    Update()
+    C_Timer.After(0, Update)
 end
 
 local function OnWindowHide()
