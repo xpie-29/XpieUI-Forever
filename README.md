@@ -5,7 +5,7 @@ A WoW Forever addon (Interface 16001): a settings shell with built-in plugins th
 | Plugin | Styles | Status |
 |---|---|---|
 | Zygor Guides | ZygorGuidesViewerForever | Deliveries 1–3 done |
-| Quest Windows | Blizzard's quest, gossip and book windows (not compatible with DialogueUI: you choose one at login) | Deliveries 1–4: module choice, shared window position, font size, hide UI while talking, keyboard controls ([plan](docs/quest-plan.md)) |
+| Quest Windows | Blizzard's quest, gossip and book windows (not compatible with DialogueUI: you choose one at login) | Deliveries 1–5: module choice, shared window position, font size, hide UI while talking, keyboard controls, speaker camera ([plan](docs/quest-plan.md)) |
 
 Each plugin only runs when the addon it styles is loaded, and can be turned off in settings (takes a `/reload`).
 

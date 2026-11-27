@@ -2,7 +2,7 @@
 ## Title: XpieUI Forever
 ## Notes: Settings shell with plugins that make popular addons match the native WoW Forever UI.
 ## Author: Xpie
-## Version: 0.6.1
+## Version: 0.7.0
 ## SavedVariables: XpieUIForeverDB
 ## OptionalDeps: DialogueUI
 ## IconTexture: Interface\Icons\INV_Misc_Gear_01
@@ -21,5 +21,6 @@ Plugins\Quest\Choice.lua
 Plugins\Quest\Position.lua
 Plugins\Quest\Fonts.lua
 Plugins\Quest\HideUI.lua
+Plugins\Quest\Camera.lua
 Plugins\Quest\Keys.lua
 Plugins\Quest\Badges.lua
