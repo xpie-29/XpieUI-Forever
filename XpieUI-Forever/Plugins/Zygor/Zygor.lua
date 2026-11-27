@@ -201,10 +201,91 @@ function plugin:OnTargetLoaded()
     ApplyFont()
 end
 
+-- ---------------------------------------------------------------------------
+-- Zygor bug workaround (any style): a window dragged against the top edge
+-- comes back ~20px lower after a reload.
+-- Zygor's window may hang partly above the screen (its handle's clamp insets
+-- allow 43px), and its top part is empty once the chrome is transparent, so
+-- the window you see sits flush with the top while the frame overhangs it.
+-- Zygor saves only its handle's anchor, which doesn't keep that overhang
+-- (measured: saved y 0.0 while the window was 22px above the edge), so after
+-- a reload the window is fully on screen and looks lower.
+-- Fix: when a drag/resize ends, remember where the window itself is on
+-- screen; after login, once Zygor's insets are set, move the handle by the
+-- difference. We never write Zygor's own saved data.
+-- ---------------------------------------------------------------------------
+local anchorDone = false
+
+local function Master()
+    local ZGV = _G.ZGV
+    return ZGV and ZGV.Frame and ZGV.Frame:GetParent()
+end
+
+-- The window's top-left in screen pixels, measured from the screen's top-left.
+local function WindowScreenPos()
+    local frame = _G.ZGV and _G.ZGV.Frame
+    if not (frame and frame:GetTop() and frame:GetLeft()) then return end
+    local s = frame:GetEffectiveScale()
+    local screenTop = UIParent:GetTop() * UIParent:GetEffectiveScale()
+    return frame:GetLeft() * s, screenTop - frame:GetTop() * s
+end
+
+local masterHooked = false
+local function HookMaster()
+    local master = Master()
+    if masterHooked or not master then return end
+    masterHooked = true
+    hooksecurefunc(master, "StopMovingOrSizing", function()
+        -- Zygor re-aligns right after; measure once that has run.
+        C_Timer.After(0, function()
+            local left, top = WindowScreenPos()
+            if left then plugin.db.windowPos = { left = left, top = top } end
+        end)
+    end)
+end
+
+local function RestoreWindowPos()
+    local ZGV = _G.ZGV
+    local master = Master()
+    local want = plugin.db.windowPos
+    if anchorDone or not (master and want) then return end
+    if ZGV.framemoving or (MerchantFrame and MerchantFrame:IsShown()) then return end
+    -- Wait until Zygor has set the handle's clamp insets (right inset > 0).
+    local _, right = master:GetClampRectInsets()
+    if not (right and right > 0) then return end
+
+    local left, top = WindowScreenPos()
+    if not left then return end
+    if math.abs(left - want.left) >= 1 then
+        -- Moved sideways without us (e.g. XpieUI off): forget our copy.
+        plugin.db.windowPos = { left = left, top = top }
+        anchorDone = true
+        return
+    end
+    local delta = top - want.top   -- px the window sits too low (+) or too high (-)
+    if math.abs(delta) < 1 then
+        anchorDone = true          -- in place
+        return
+    end
+    local point, rel, relPoint, x, y = master:GetPoint(1)
+    if not (point and y) then return end
+    master:ClearAllPoints()
+    master:SetPoint(point, rel or UIParent, relPoint, x, y + delta / master:GetEffectiveScale())
+    -- Checked again on the next try.
+end
+
 -- Zygor builds its window in a background thread after login; catch it.
 function plugin:OnLogin()
     for _, delay in ipairs({ 1, 3, 6, 12 }) do
         C_Timer.After(delay, function() core:ApplyAll() end)
+    end
+    for _, delay in ipairs({ 2, 4, 8, 15 }) do
+        C_Timer.After(delay, function()
+            if core:IsPluginRunning(plugin) then
+                core:SafeCall(HookMaster)
+                core:SafeCall(RestoreWindowPos)
+            end
+        end)
     end
 end
 
@@ -224,6 +305,43 @@ function plugin:BuildSettings(page)
 
     page:PanelStyle(function() return plugin.db.panel end, PANEL_DEFAULTS)
 end
+
+-- /xui zygorpos: where Zygor's frames are and what clamps them (testing the
+-- top-edge position bug). Screen-pixel tops so different scales compare.
+core:RegisterCommand("zygorpos", function()
+    local ZGV = _G.ZGV
+    local frame = ZGV and ZGV.Frame
+    if not frame then core:Print("Zygor's window isn't built.") return end
+    local screenTop = UIParent:GetTop() * UIParent:GetEffectiveScale()
+    local function Describe(f, label)
+        local point, rel, relPoint, x, y = f:GetPoint(1)
+        local top = f:GetTop() and (screenTop - f:GetTop() * f:GetEffectiveScale()) or -1
+        local l, r, t, b = f:GetClampRectInsets()
+        core:Print(("%s: %s %s %s %.1f,%.1f | %.1fpx below screen top | size %.0fx%.0f scale %.2f | clamped %s insets L%.0f R%.0f T%.0f B%.0f"):format(
+            label, tostring(point), rel and (rel:GetName() or "?") or "nil", tostring(relPoint), x or 0, y or 0,
+            top, f:GetWidth(), f:GetHeight(), f:GetEffectiveScale(), tostring(f:IsClampedToScreen()),
+            l or 0, r or 0, t or 0, b or 0))
+    end
+    Describe(frame:GetParent(), "Master")
+    Describe(frame, "Window")
+    if frame.Border then Describe(frame.Border, "Border") end
+    local titleBar = frame.Controls and frame.Controls.TitleBar
+    if titleBar then Describe(titleBar, "TitleBar") end
+    if plugin.panel then Describe(plugin.panel.frame, "XpieUI panel") end
+    local bar = ZGV.ActionBar and ZGV.ActionBar.Frame
+    if bar then
+        Describe(bar, "ActionBar")
+        core:Print(("ActionBar shown %s, enabled %s, snapped %s"):format(tostring(bar:IsShown()),
+            tostring(ZGV.db.profile.enable_actionbar), tostring(bar.snapped)))
+    else
+        core:Print("ActionBar frame: not created")
+    end
+    local saved = ZGV.db.profile.frame_anchor
+    if saved then core:Print(("Saved: %s %s %.1f,%.1f"):format(tostring(saved[1]), tostring(saved[3]), saved[4] or 0, saved[5] or 0)) end
+    local tabs = frame.Border and frame.Border.TabContainer
+    core:Print(("Tab bar height %.1f, resizeup %s, scale option %s"):format(
+        tabs and tabs:GetHeight() or -1, tostring(ZGV.db.profile.resizeup), tostring(ZGV.db.profile.framescale)))
+end, "Report Zygor window position and clamping (testing)")
 
 core:RegisterCommand("zygor", function()
     local frame = _G.ZGV and _G.ZGV.Frame
