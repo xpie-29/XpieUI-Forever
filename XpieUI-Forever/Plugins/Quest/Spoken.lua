@@ -4,7 +4,7 @@
 -- Every optional call is checked for first, as Spoken's docs ask.
 --
 --   Controls    Spoken's own row (Play/Stop, Previous, Next, Report) in the
---               window's title bar, left of the close button
+--               band under the title bar, towards the right
 --
 -- Off (or Spoken not installed): nothing is drawn and Spoken works exactly
 -- as it does on its own.
@@ -14,6 +14,9 @@ local plugin = core.questPlugin
 
 local WINDOWS = { "QuestFrame", "GossipFrame", "ItemTextFrame" }
 local API_VERSION = 1
+-- The row's right end and middle, from the window's top right: in the band
+-- between the title bar and the page, clear of the button in its corner.
+local ROW_RIGHT, ROW_Y = -48, -45
 
 local rows = {}          -- [window] = Spoken's row
 local hooked = false
@@ -82,10 +85,6 @@ local function SetEnabled(button, on)
     end
 end
 
-local function CloseButton(window)
-    return window.CloseButton or _G[window:GetName() .. "CloseButton"]
-end
-
 local function Tooltip()
     return GameTooltip
 end
@@ -151,14 +150,16 @@ local function RefreshWindow(window)
     SetEnabled(row.previous, Call("CanPrevious") and true or false)
     SetEnabled(row.skip, clip ~= nil)
 
-    -- Right to left from the close button: Next, Previous, Play, Report.
+    -- Right to left: Next, Previous, Play, Report.
     local buttons = { row.skip, row.previous, row.play }
     local showReport = row.report and ReportAction(clip) ~= nil
     if row.report then
         row.report:SetShown(showReport and true or false)
         if showReport then buttons[#buttons + 1] = row.report end
     end
-    row:Place(buttons, CloseButton(window))
+    row:Place(buttons)
+    row.frame:ClearAllPoints()
+    row.frame:SetPoint("RIGHT", window, "TOPRIGHT", ROW_RIGHT, ROW_Y)
     row.frame:Show()
     for _, button in ipairs(buttons) do row:RefreshTip(button) end
 end

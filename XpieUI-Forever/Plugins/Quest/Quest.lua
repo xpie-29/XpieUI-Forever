@@ -164,7 +164,7 @@ function plugin:BuildSettings(page)
     if self:SpokenAvailable() then
         page:Header("Spoken")
         page:Checkbox({ key = "spoken", label = "Spoken Integration",
-            description = "Spoken's controls (Play/Stop, Previous, Next and Report) sit in the title bar of the quest, gossip and book windows. Off: Spoken works exactly as it does on its own." })
+            description = "Spoken's controls (Play/Stop, Previous, Next and Report) sit at the top of the quest, gossip and book windows. Off: Spoken works exactly as it does on its own." })
     end
 
     page:Header("Keyboard")
