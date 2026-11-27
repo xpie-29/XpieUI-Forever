@@ -37,7 +37,7 @@ Not used: the Parchment addon, its 6 MB of masks, the quest-look hand-off, Guide
 
 ## The plugin
 
-- **Files:** `Plugins/Quest/` holds `Quest.lua` (registration, settings, status, the incompatible-addons list), `Choice.lua` (the choice window), `Position.lua`, `Fonts.lua`, `HideUI.lua`, `Camera.lua`, `Keys.lua`, `Badges.lua`, `Spoken.lua` (setting and controls row) and `SpokenWords.lua` (word highlighting, Spoken's player).
+- **Files:** `Plugins/Quest/` holds `Quest.lua` (registration, settings, status, the incompatible-addons list), `Choice.lua` (the choice window), `Position.lua`, `Fonts.lua`, `HideUI.lua`, `Camera.lua`, `Keys.lua`, `Badges.lua`, `Spoken.lua` (setting and controls row), `SpokenWords.lua` (word highlighting, Spoken's player) and `SpokenBox.lua` (the small box).
 - **Registration:** `RegisterPlugin("quest", {...})` with no target addon, because it works on Blizzard's own windows.
 - **If an incompatible addon is loaded,** the user picks which quest module to use (section 0).
 
@@ -215,8 +215,10 @@ The integration is turned on automatically when Spoken is installed, and turned 
 | Setting | Default |
 |---|---|
 | Spoken Integration | **on** when Spoken is loaded; hidden when it isn't |
-| Parchment Highlight | Spoken's deep red `#9c1a1a` |
+| Parchment Highlight | bright blue `#0070dd` (Spoken's deep red was hard to see; saved red values move to blue once) |
 | Dark Highlight | Spoken's gold `#ffd100` |
+
+Either colour can also be **Class Colour** (stored as `"class"`, the player's class colour at draw time).
 
 - **On:** Spoken's controls sit at the top of our window, the words are highlighted in our window's text, and the small tooltip-style box takes over when the window closes mid-line.
 - **Off:** none of that is drawn. We call `Spoken:SetPlayerHost(nil)`, and Spoken works exactly as it does on its own: its own player window and subtitles, its own settings.
@@ -270,6 +272,11 @@ It's built on Spoken's documented public API (`Spoken/API.lua`, `API_VERSION` 1)
   - the line's text with the highlight in the dark colour
 - **Placement:** it sits where the dialog window was, using the shared position, and stays visible while the rest of the UI is still faded.
 - **Gone:** when the line ends or is skipped, the box fades out. Opening a new dialog moves it back into the window.
+- **Built (Delivery 6c):** `SpokenBox.lua`.
+  - Only the line the window was showing (the last one matched in its text) moves to the box, and only if it's still at the head of Spoken's queue 0.15s after the window closed (so gossip -> quest doesn't flash it).
+  - 340 wide; the text area grows up to 150 high, then scrolls to follow the word.
+  - Spoken's player stays hosted on our hidden frame while the box shows.
+  - A paused line keeps the box; Play resumes it.
 
 ## Deliveries
 

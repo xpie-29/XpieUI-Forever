@@ -419,7 +419,9 @@ function PageMixin:TextInput(opt)
 end
 
 -- White label, a row of colour swatches and a hex box ("rrggbb"). The value
--- is the hex string. opt.swatches = { { hex = "9c1a1a", name = "Spoken Red" }, ... }.
+-- is the hex string. opt.swatches = { { hex = "9c1a1a", name = "Spoken Red" }, ... };
+-- a swatch whose value isn't a colour ("class") gives rgb = function() end
+-- for its fill and boxText for the hex box.
 -- Gamepad: D-pad left/right step through the swatches, A toggles the hex box.
 local SWATCH, SWATCH_GAP = 22, 6
 local GOLD = { 1, 0.82, 0 }
@@ -447,7 +449,12 @@ function PageMixin:ColorChoice(opt)
         button.fill = button:CreateTexture(nil, "ARTWORK")
         button.fill:SetPoint("TOPLEFT", 2, -2)
         button.fill:SetPoint("BOTTOMRIGHT", -2, 2)
-        button.fill:SetColorTexture(HexToRGB(entry.hex))
+        if entry.rgb then
+            local r, g, b = entry.rgb()
+            button.fill:SetColorTexture(r or 1, g or 1, b or 1)
+        else
+            button.fill:SetColorTexture(HexToRGB(entry.hex))
+        end
         button:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
         button:SetScript("OnClick", function()
             page:SetValue(opt, entry.hex)
@@ -459,7 +466,7 @@ function PageMixin:ColorChoice(opt)
             GameTooltip:Show()
         end)
         button:SetScript("OnLeave", function() GameTooltip:Hide() end)
-        button.hex = entry.hex
+        button.hex, button.boxText = entry.hex, entry.boxText
         swatches[index] = button
     end
 
@@ -469,7 +476,15 @@ function PageMixin:ColorChoice(opt)
     box:SetAutoFocus(false)
     box:SetMaxLetters(7)
     local function Commit(eb)
-        local hex = (eb:GetText() or ""):match("^%s*#?(%x%x%x%x%x%x)%s*$")
+        local typed = strtrim(eb:GetText() or "")
+        for _, swatch in ipairs(swatches) do
+            if swatch.boxText and typed:lower() == swatch.boxText:lower() then
+                if swatch.hex ~= page:GetValue(opt) then page:SetValue(opt, swatch.hex) end
+                page:Refresh()
+                return
+            end
+        end
+        local hex = typed:match("^#?(%x%x%x%x%x%x)$")
         if hex then
             hex = hex:lower()
             if hex ~= page:GetValue(opt) then page:SetValue(opt, hex) end
@@ -478,8 +493,14 @@ function PageMixin:ColorChoice(opt)
     end
     box:SetScript("OnEnterPressed", function(eb) Commit(eb); eb:ClearFocus() end)
     box:SetScript("OnEditFocusLost", Commit)
+    local function BoxText(value)
+        for _, swatch in ipairs(swatches) do
+            if swatch.hex == value and swatch.boxText then return swatch.boxText end
+        end
+        return value or ""
+    end
     box:SetScript("OnEscapePressed", function(eb)
-        eb:SetText(page:GetValue(opt) or "")
+        eb:SetText(BoxText(page:GetValue(opt)))
         eb:ClearFocus()
     end)
     self.editBoxes[#self.editBoxes + 1] = box
@@ -515,7 +536,7 @@ function PageMixin:ColorChoice(opt)
                 swatch.border:SetColorTexture(0, 0, 0, 0.8)
             end
         end
-        if not box:HasFocus() then box:SetText(value or "") end
+        if not box:HasFocus() then box:SetText(BoxText(value)) end
     end
     self.y = self.y - height - 8
 end

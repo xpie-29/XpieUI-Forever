@@ -20,6 +20,7 @@ local API_VERSION = 1
 local ROW_RIGHT, ROW_Y = -48, -45
 
 local rows = {}          -- [window] = Spoken's row
+local extraHosts = {}    -- [frame] = place(rowFrame): other frames with a row (the small box)
 local hooked = false
 local callbacksSet = false
 
@@ -161,7 +162,11 @@ local function RefreshWindow(window)
     end
     row:Place(buttons)
     row.frame:ClearAllPoints()
-    row.frame:SetPoint("RIGHT", window, "TOPRIGHT", ROW_RIGHT, ROW_Y)
+    if extraHosts[window] then
+        extraHosts[window](row.frame)
+    else
+        row.frame:SetPoint("RIGHT", window, "TOPRIGHT", ROW_RIGHT, ROW_Y)
+    end
     row.frame:Show()
     for _, button in ipairs(buttons) do row:RefreshTip(button) end
 end
@@ -171,6 +176,14 @@ function Refresh()
         local window = _G[name]
         if window then RefreshWindow(window) end
     end
+    for frame in pairs(extraHosts) do RefreshWindow(frame) end
+end
+plugin.RefreshSpokenRows = function() Refresh() end
+
+-- Another frame of ours that carries the row while it's shown; place(rowFrame)
+-- anchors it.
+function plugin:AddSpokenRowHost(frame, place)
+    extraHosts[frame] = place
 end
 plugin.UpdateSpoken = function()
     Refresh()

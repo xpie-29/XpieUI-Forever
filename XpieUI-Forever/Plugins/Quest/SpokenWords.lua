@@ -17,7 +17,9 @@
 --               until the player scrolls it themselves (then until the
 --               next line)
 --   Player      hosted on a hidden frame (Spoken:SetPlayerHost) while a
---               window is open, given back when it closes
+--               window or the small box (SpokenBox.lua) is open, given back
+--               when they close
+--   Hand-off    a window closing mid-line offers that line to the small box
 --
 -- The quest text frames are shared with the world map: they're only marked
 -- while the quest window owns them, and always put back first.
@@ -31,8 +33,9 @@ local UNHOST_DELAY = 0.15          -- gossip -> quest: one window closes before 
 local SCROLL_LEAD = 0.2            -- share of the view kept above the word when scrolling
 local SCROLL_EDGE = 0.85           -- scroll once the word passes this far down the view
 
-plugin.SPOKEN_LIGHT = "9c1a1a"     -- Spoken's deep red, on parchment
+plugin.SPOKEN_LIGHT = "0070dd"     -- bright blue, on parchment
 plugin.SPOKEN_DARK = "ffd100"      -- Spoken's gold, on dark pages
+plugin.SPOKEN_CLASS = "class"      -- the player's class colour
 
 -- paragraphs: { region, text (Blizzard's), shown (what we last set), words,
 -- dark, scroll, html }. clip, map, span: the caption matched against them.
@@ -43,6 +46,7 @@ local hosted = false
 local hostToken = 0
 local settingOurs = false          -- our own SetText on the book page
 local bookText                     -- what Blizzard last put on the book page
+local offer                        -- { clip, left, top, scale }: the line of the window that just closed
 
 local function Api() return plugin.SpokenApi and plugin.SpokenApi() end
 
@@ -72,11 +76,23 @@ local function ColorCode(hex)
     return "|cff" .. hex
 end
 
+-- The player's class colour, as rrggbb.
+function plugin:ClassColorHex()
+    local _, class = UnitClass("player")
+    local color = class and ((C_ClassColor and C_ClassColor.GetClassColor and C_ClassColor.GetClassColor(class))
+        or (RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]))
+    if not color then return nil end
+    return ("%02x%02x%02x"):format(math.floor(color.r * 255 + 0.5), math.floor(color.g * 255 + 0.5), math.floor(color.b * 255 + 0.5))
+end
+
 local function HighlightColor(dark)
     local hex = dark and plugin.db.spokenDark or plugin.db.spokenLight
+    if hex == plugin.SPOKEN_CLASS then hex = plugin:ClassColorHex() end
     if not core.HexToRGB(hex) then hex = dark and plugin.SPOKEN_DARK or plugin.SPOKEN_LIGHT end
     return ColorCode(hex)
 end
+plugin.SpokenHighlightColor = HighlightColor
+plugin.SpokenMarks = function() return Marks() end
 
 -- Light text means a dark page.
 local function IsDark(r, g, b)
@@ -287,6 +303,7 @@ local function Tick()
             state.clip, state.scrolledTo = clip, nil
             state.scrollSet, state.userScrolled = nil, nil
             state.map, state.span = marks.Align(caption.words, state.paragraphs)
+            if state.map then state.matchedClip = clip end
         end
     else
         state.clip, state.map = nil, nil
@@ -336,17 +353,27 @@ end
 -- Start / stop
 -- ---------------------------------------------------------------------------
 local function Update()
-    local open = plugin.SpokenOn and plugin.SpokenOn() and ShownWindow() ~= nil
+    local on = plugin.SpokenOn and plugin.SpokenOn()
+    if not on and plugin.HideSpokenBox then plugin.HideSpokenBox(true) end
+    local windowOpen = on and ShownWindow() ~= nil
+    local open = windowOpen or (on and plugin.SpokenBoxShown and plugin.SpokenBoxShown())
     hostToken = hostToken + 1
     if open then
         SetHosted(true)
-    elseif hosted then
+    end
+    if not windowOpen and (hosted or offer) then
+        -- After the gossip -> quest gap: the line carries on in the small box,
+        -- or Spoken gets its player back.
         local token = hostToken
         C_Timer.After(UNHOST_DELAY, function()
-            if token == hostToken then SetHosted(false) end
+            if token ~= hostToken then return end
+            local line = offer
+            offer = nil
+            if line and plugin.ShowSpokenBox and plugin.ShowSpokenBox(line) then return end
+            if not (plugin.SpokenBoxShown and plugin.SpokenBoxShown()) then SetHosted(false) end
         end)
     end
-    if open and WordsOn() then
+    if windowOpen and WordsOn() then
         state.force = true
         driver:SetScript("OnUpdate", OnUpdate)
     else
@@ -362,9 +389,21 @@ function plugin:InitSpokenWords()
     for _, name in ipairs(WINDOWS) do
         local frame = _G[name]
         if frame then
-            frame:HookScript("OnShow", function() Invalidate(); Update() end)
+            frame:HookScript("OnShow", function()
+                offer = nil
+                if plugin.HideSpokenBox then plugin.HideSpokenBox(true) end
+                Invalidate()
+                Update()
+            end)
             -- Put the text back at once: the map may take QuestInfo next.
-            frame:HookScript("OnHide", function() Invalidate(); Update() end)
+            frame:HookScript("OnHide", function()
+                local clip = state.matchedClip
+                if clip and plugin.SpokenOn and plugin.SpokenOn() then
+                    offer = { clip = clip, left = frame:GetLeft(), top = frame:GetTop(), scale = frame:GetEffectiveScale() }
+                end
+                Invalidate()
+                Update()
+            end)
         end
     end
     for _, panel in ipairs({ QuestFrameGreetingPanel, QuestFrameDetailPanel, QuestFrameProgressPanel, QuestFrameRewardPanel }) do
