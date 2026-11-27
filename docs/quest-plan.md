@@ -197,16 +197,13 @@ How DialogueUI does it (`Code/Camera.lua`), rewritten in our own code:
    - **Combat:** if combat starts, everything is restored at once. DialogueUI marks the focus settings as safe in combat.
 5. **Mounted and in instances:** mounted, the shoulder offset is scaled as DialogueUI does by default ("Maintain Offset While Mounted" on). In instances, the camera works too (that DialogueUI option is off by default).
 
-**Blizzard's experimental-camera warning popup** (probe results):
-- **DialogueUI's trick doesn't work on Forever.** The popup is raised by Blizzard's own event handler (`Blizzard_Game/Shared/EventRouting.lua`), not by UIParent, so unregistering it on UIParent does nothing.
-- **When it shows:** once per login, the first time a `test_camera*` setting is turned on. After Accept it doesn't return until the next login.
-- **What the buttons do:** Accept keeps the settings. Disable runs `ResetTestCVars()`.
-
-**The user's choice: ask at login.**
-- A couple of seconds after the loading screen, out of combat and only while the Quest camera is on, we set `test_cameraTargetFocusInteractEnable` to 1 with both strengths at 0. That has no visible effect, but it raises Blizzard's popup while the player is just standing there.
-- The value stays at 1 for the session, with strengths 0. Its original value is saved in `XpieUIForeverDB` and put back at logout, and also at the next login if the game crashed.
-- **If Disable is pressed:** the value reads back as 0. For the rest of that session the camera skips its experimental parts (focus and shoulder) and keeps only the field of view and the zoom. It doesn't ask again until the next login.
-- We never touch the popup itself: no `StaticPopup_Hide`, no event unregistering.
+**Blizzard's experimental-camera warning popup:** handled the way DialogueUI does it on Forever, so players never see it.
+- **The call:** `GameEvent.UnregisterInternalEvent("EXPERIMENTAL_CVAR_CONFIRMATION_NEEDED")` (DialogueUI `Code/Camera.lua:1125`, "For 12.1.0"). `GameEvent.UnregisterInternalEvent` is Blizzard's own function (`Blizzard_Game/Shared/EventRouting.lua:25`) for removing one of its internal event handlers, which is where Forever's popup comes from.
+- **Not the older trick:** DialogueUI's older `UIParent:UnregisterEvent(...)` (`Camera.lua:45`) does nothing on Forever. The probe showed UIParent doesn't listen for this event.
+- **Evidence:** at 08:45, with DialogueUI loaded, our probe's watcher saw the event fire but no popup appeared. Without DialogueUI, the popup appeared once per login.
+- **When:** we call it once at load, only if `GameEvent.UnregisterInternalEvent` exists and the Quest camera is on. Turning the camera off takes effect at the next `/reload`.
+- **Side effect:** Blizzard's experimental-camera warning won't show for the rest of the session for any reason, exactly as with DialogueUI installed today.
+- **No other popup handling:** no `StaticPopup_Hide`, and no hiding of the popup frame.
 
 **Probe results:** under the gamepad UI, the field of view (90 → 75 eased), the turn to the speaker (pitch strength 1) and the shoulder offset (±1.5, on the side away from the window, both sides seen) all applied. Everything came back exactly in all four tests. The zoom never moved, because the user's camera (4.93 to 5.35) was already closer than DialogueUI's goal for a 2.22-tall NPC (7.5). That matches DialogueUI, which only zooms in.
 
