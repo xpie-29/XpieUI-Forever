@@ -1,12 +1,12 @@
 -- HideUI.lua  (XpieUI-Forever, Quest module)
 -- Hide UI While Talking: while a quest, gossip or book window is open, the
 -- rest of the interface fades out, leaving the world, the speaker and the
--- window (as DialogueUI does).
+-- window.
 --
 -- Every child of UIParent that's showing when the window opens fades to alpha
 -- 0. Frames that open later (bags, a merchant from a gossip option) are left
--- alone. Alpha only: nothing is hidden or re-parented. DialogueUI uses
--- SetUIVisibility(false), which would take Blizzard's quest windows with it.
+-- alone. Alpha only: nothing is hidden or re-parented (SetUIVisibility(false)
+-- would take Blizzard's quest windows with it).
 --
 -- Kept visible: the quest windows and their model, tooltips, popups,
 -- Blizzard's controller cursor and prompts, XpieUI's own windows, Spoken, and

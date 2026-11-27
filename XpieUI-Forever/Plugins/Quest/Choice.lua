@@ -1,8 +1,8 @@
 -- Choice.lua  (XpieUI-Forever, Quest module)
--- XpieUI's quest module and DialogueUI can't run together. When both are on at
--- login, this asks which one to keep:
---   Use XpieUI      DialogueUI is turned off (every character), UI reloads
---   Use DialogueUI  XpieUI's quest module turns itself off, no reload
+-- XpieUI's quest module and the other quest-window addon (plugin.otherAddon)
+-- can't run together. When both are on at login, this asks which one to keep:
+--   Use XpieUI      the other addon is turned off (every character), UI reloads
+--   Use the other   XpieUI's quest module turns itself off, no reload
 -- The window can't be dismissed any other way (no Esc, no close button).
 --
 -- Not a StaticPopup: addon popups break Forever's controller UI. The window
@@ -17,7 +17,7 @@ local WIDTH, HEIGHT = 520, 190
 local BUTTON_WIDTH, BUTTON_HEIGHT = 200, 36
 
 local frame, pointer, buttons
-local focus = 1          -- 1 = XpieUI, 2 = DialogueUI
+local focus = 1          -- 1 = XpieUI, 2 = the other addon
 local usingPad = false
 
 local function UpdateFocus()
@@ -37,7 +37,7 @@ local function Pick(index)
     if SOUNDKIT then PlaySound(SOUNDKIT.IG_MAINMENU_OPTION) end
     frame:Hide()
     frame.done = true
-    if index == 1 then plugin:UseXpieUI() else plugin:UseDialogueUI() end
+    if index == 1 then plugin:UseXpieUI() else plugin:UseOtherAddon() end
 end
 
 local function Move(delta)
@@ -104,14 +104,15 @@ local function CreateChoiceWindow()
     local text = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     text:SetPoint("TOP", title, "BOTTOM", 0, -14)
     text:SetWidth(WIDTH - 60)
-    text:SetText("XpieUI's Quest module isn't compatible with DialogueUI. Which one would you like to use for quests and dialogue?")
+    local other = plugin.otherAddon
+    text:SetText(("XpieUI's Quest module isn't compatible with %s. Which one would you like to use for quests and dialogue?"):format(other))
 
     local note = frame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
     note:SetPoint("TOP", text, "BOTTOM", 0, -8)
     note:SetWidth(WIDTH - 60)
-    note:SetText("XpieUI turns DialogueUI off and reloads. You can switch later on the Quest Windows page of /xui.")
+    note:SetText(("XpieUI turns %s off and reloads. You can switch later on the Quest Windows page of /xui."):format(other))
 
-    buttons = { CreateButton(1, "Use XpieUI"), CreateButton(2, "Use DialogueUI") }
+    buttons = { CreateButton(1, "Use XpieUI"), CreateButton(2, "Use " .. other) }
     pointer = core.CreateGoldPointer(frame)
     pointer:SetFrameLevel(frame:GetFrameLevel() + 20)
 
@@ -152,11 +153,11 @@ local function CreateChoiceWindow()
     end)
 end
 
--- Called at login while DialogueUI is loaded and the module is on. A short
--- wait lets the loading screen and DialogueUI's own start-up finish.
+-- Called at login while the other addon is loaded and the module is on. A
+-- short wait lets the loading screen and that addon's own start-up finish.
 function plugin:ShowChoice()
     C_Timer.After(2, function()
-        if not (plugin.active and plugin:DialogueUILoaded()) then return end
+        if not (plugin.active and plugin:OtherAddonLoaded()) then return end
         if not frame then CreateChoiceWindow() end
         if frame.done then return end
         if InCombatLockdown() then

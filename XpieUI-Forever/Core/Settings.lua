@@ -92,7 +92,7 @@ local function BuildPluginPage(plugin)
     end
 
     -- Settings that matter even while the plugin isn't running (the Quest
-    -- module's XpieUI / DialogueUI switch).
+    -- module's choice of quest-window addon).
     if plugin.BuildModuleSettings then
         addon:SafeCall(plugin.BuildModuleSettings, plugin, page)
     end

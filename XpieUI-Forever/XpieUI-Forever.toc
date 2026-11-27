@@ -2,9 +2,8 @@
 ## Title: XpieUI Forever
 ## Notes: Settings shell with plugins that make popular addons match the native WoW Forever UI.
 ## Author: Xpie
-## Version: 0.7.0
+## Version: 0.7.1
 ## SavedVariables: XpieUIForeverDB
-## OptionalDeps: DialogueUI
 ## IconTexture: Interface\Icons\INV_Misc_Gear_01
 ## Category-enUS: User Interface
 

@@ -1,28 +1,28 @@
 -- Camera.lua  (XpieUI-Forever, Quest module)
 -- Speaker Camera: while a quest or gossip window is open, the camera turns to
 -- the speaker, moves them to the side away from the window and zooms in a
--- little. One fixed behaviour, DialogueUI's "Zoom In" with Zoom Multiplier 4
--- and Change FOV, for keyboard & mouse and the controller alike.
+-- little. One fixed behaviour for keyboard & mouse and the controller alike.
 --
 --   Speaker (an NPC)       measure its model, zoom in (never out) by its
---                          height, ease in Blizzard's interact-focus camera
---                          (pitch), shoulder offset, field of view 75
+--                          height, Blizzard's interact-focus camera (pitch),
+--                          shoulder offset, field of view 75
 --   No speaker (objects,   shoulder offset that follows the zoom, zoom in
 --   boards, items)         to 3 (never out)
---   Books                  no camera (as DialogueUI)
+--   Books                  no camera
 --
--- Everything is put back when the window closes (gossip -> quest counts as
--- one conversation), at once if combat starts, and on logout. The values it
--- changes are also kept in the saved variables until restored, so a crash
--- mid-conversation is put right at the next login. Stands down while
+-- Every change moves together on one clock (ease in and out over a second):
+-- turn, side offset, field of view and zoom. The zoom is driven in small
+-- steps along the same curve rather than handed to the game in one jump.
+-- Closing the window eases everything back the same way (gossip -> quest
+-- counts as one conversation); combat and logout put it back at once. The
+-- values it changes are also kept in the saved variables until restored, so
+-- a crash mid-conversation is put right at the next login. Stands down while
 -- DynamicCam is loaded.
 --
 -- Blizzard's experimental-camera warning (the test_camera* settings) is
--- switched off the way DialogueUI does it on Forever:
--- GameEvent.UnregisterInternalEvent removes Blizzard's own handler for it.
--- That runs as soon as our saved settings load; the camera never touches a
--- test_camera* setting unless it worked.
--- Ported from DialogueUI Code/Camera.lua and API.lua (EvaluateNPCSize).
+-- switched off with GameEvent.UnregisterInternalEvent, which removes
+-- Blizzard's own handler for it. That runs as soon as our saved settings
+-- load; the camera never touches a test_camera* setting unless it worked.
 
 local addonName = ...
 local core = XpieUI
@@ -31,34 +31,42 @@ local plugin = core.questPlugin
 local WINDOWS = { "QuestFrame", "GossipFrame" }
 local RESTORE_DELAY = 0.15       -- gossip -> quest: one window closes before the next opens
 local EASE_TIME = 1.0
-local ZOOM_MULTIPLIER = 2.5      -- DialogueUI's Zoom Multiplier 4
+local MIN_ZOOM_TIME = 0.6        -- a zoom that starts late (model still loading) still eases
+local ZOOM_MULTIPLIER = 2.5      -- camera distance per step of the height table
 local FALLBACK_HEIGHT = 3        -- NPC couldn't be measured
 local FOV_ZOOMED = 75
 local SHOULDER_DEFAULT = 1.5
-local MOUNTED_MULTIPLIER = 4.8   -- DialogueUI "Maintain Offset While Mounted" (window on the right)
+local MOUNTED_MULTIPLIER = 4.8   -- mounts: keep the speaker clear of the window (window on the right)
+local STRENGTH = "test_cameraTargetFocusInteractStrengthPitch"
+local SHOULDER = "test_cameraOverShoulder"
 local FOCUS_CVARS = {
     test_cameraTargetFocusInteractEnable = 1,
-    test_cameraTargetFocusInteractStrengthPitch = 0,
+    [STRENGTH] = 0,               -- eased to 1
     test_cameraTargetFocusInteractStrengthYaw = 0,
     test_cameraHeadMovementStrength = 0,
     CameraKeepCharacterCentered = 0,
     CameraReduceUnexpectedMovement = 0,
 }
--- Druid forms: shoulder offset per form (DialogueUI's table).
+-- Druid forms: shoulder offset per form.
 local FORM_OFFSET = { [1] = 1.0, [2] = 1.0, [3] = 1.1, [4] = 0.9, [5] = 0.9, [27] = 0.55, [29] = 0.55, [31] = 1.0 }
 
 local GetCVar, SetCVar = C_CVar.GetCVar, C_CVar.SetCVar
 
 local cam = {
-    active = false,
+    phase = nil,         -- "in" (easing in), "on", "out" (easing back), nil
     mode = nil,          -- "focus" (a speaker) or "pan" (no speaker)
+    t = 0,               -- the phase's clock
+    from = nil, to = nil,-- focus: { strength, shoulder, fov } at the ends of the ease
+    zoom = nil,          -- zoom ease: { from, to, t, d, at }
     backup = nil,        -- [cvar] = value before we changed it
     oldZoom = nil,
     onRight = false,     -- window on the right half of the screen
     multiplier = 1,      -- shoulder side and mount scaling
     shoulder = SHOULDER_DEFAULT,
     panScale = 1,
-    fovStart = nil,      -- set when the field of view is being changed
+    shoulderNow = 0,
+    measureId = 0,
+    measuring = false,
 }
 local driver = CreateFrame("Frame")
 local events = CreateFrame("Frame")
@@ -67,12 +75,17 @@ local restoreToken = 0
 local blocked = false
 local scene, actor
 
-local function OutSine(t, from, to)
-    return (to - from) * math.sin(t / EASE_TIME * (math.pi / 2)) + from
+-- Slow at both ends, so nothing starts or stops with a jolt.
+local function Ease(from, to, p)
+    return from - (to - from) / 2 * (math.cos(math.pi * p) - 1)
 end
 
 local function Set(cvar, value)
     pcall(SetCVar, cvar, value)
+end
+
+local function Num(cvar, default)
+    return tonumber(GetCVar(cvar)) or default
 end
 
 local function DynamicCamLoaded()
@@ -179,24 +192,38 @@ end
 
 local function SetShoulder(value)
     cam.shoulderNow = value
-    Set("test_cameraOverShoulder", value)
-end
-
-local function MoveToFinalOffset()
-    if cam.mode == "focus" then
-        SetShoulder(cam.multiplier * cam.shoulder)
-    else
-        SetShoulder(cam.multiplier * PanOffset())
-    end
+    Set(SHOULDER, value)
 end
 
 -- ---------------------------------------------------------------------------
--- Zoom
+-- Zoom: eased in small steps, so it moves with everything else
 -- ---------------------------------------------------------------------------
-local function ZoomTo(goal, inOnly)
-    local diff = GetCameraZoom() - goal
-    if inOnly and diff < 0 then return end
-    if diff > 0.1 then CameraZoomIn(diff) elseif diff < -0.1 then CameraZoomOut(-diff) end
+-- Where the camera is heading (mid-ease, the game is still catching up).
+local function ZoomTarget()
+    return cam.zoom and cam.zoom.at or GetCameraZoom()
+end
+
+local function ZoomBy(delta)
+    if delta > 0 then CameraZoomOut(delta) elseif delta < 0 then CameraZoomIn(-delta) end
+end
+
+local function EaseZoomTo(goal, duration)
+    local from = ZoomTarget()
+    if math.abs(from - goal) < 0.1 then cam.zoom = nil; return end
+    cam.zoom = { from = from, to = goal, t = 0, d = duration, at = from }
+end
+
+-- true once there's no zoom left to do
+local function StepZoom(elapsed)
+    local z = cam.zoom
+    if not z then return true end
+    z.t = z.t + elapsed
+    local p = math.min(z.t / z.d, 1)
+    local want = Ease(z.from, z.to, p)
+    ZoomBy(want - z.at)
+    z.at = want
+    if p >= 1 then cam.zoom = nil; return true end
+    return false
 end
 
 local function ZoomForHeight(h)
@@ -233,105 +260,164 @@ local function MeasureSpeaker(callback)
             actor:ClearModel()
             callback(z2 - z1)
         elseif tries < 20 then
-            C_Timer.After(0.1, Poll)
+            C_Timer.After(0.05, Poll)
         else
             actor:ClearModel()
             callback(nil)
         end
     end
-    C_Timer.After(0.05, Poll)
+    Poll()
 end
 
 -- ---------------------------------------------------------------------------
--- Easing
+-- The clock: one update moves everything
 -- ---------------------------------------------------------------------------
-local function Focus_OnUpdate(_, elapsed)
+local Tick
+
+local function StartDriver()
+    driver:SetScript("OnUpdate", Tick)
+end
+
+local function Finish()
+    driver:SetScript("OnUpdate", nil)
+    events:UnregisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
+    pcall(events.UnregisterEvent, events, "PLAYER_IS_GLIDING_CHANGED")
+    events:UnregisterEvent("UPDATE_SHAPESHIFT_FORM")
+    if cam.backup then RestoreCVars(cam.backup) end
+    cam.backup = nil
+    plugin.db.cameraBackup = nil
+    cam.phase, cam.mode, cam.zoom, cam.oldZoom = nil, nil, nil, nil
+    cam.measuring = false
+end
+
+function Tick(_, elapsed)
     cam.t = cam.t + elapsed
-    local t = math.min(cam.t, EASE_TIME)
-    Set("test_cameraTargetFocusInteractStrengthPitch", OutSine(t, 0, 1))
-    if cam.fovStart then Set("cameraFov", OutSine(t, cam.fovStart, FOV_ZOOMED)) end
-    if cam.t >= EASE_TIME then
-        -- The lowered limit tipped the camera level; let go of it now (as DialogueUI).
-        ConsoleExec("pitchlimit 88")
-        driver:SetScript("OnUpdate", nil)
+    local p = math.min(cam.t / EASE_TIME, 1)
+    local phase = cam.phase
+
+    if cam.mode == "focus" then
+        if phase ~= "on" then
+            local from, to = cam.from, cam.to
+            Set(STRENGTH, Ease(from.strength, to.strength, p))
+            SetShoulder(Ease(from.shoulder, to.shoulder, p))
+            if from.fov and to.fov then Set("cameraFov", Ease(from.fov, to.fov, p)) end
+            if phase == "in" then
+                -- A lowered pitch limit tips the camera level; let go of it at the end.
+                ConsoleExec("pitchlimit " .. (p < 1 and math.floor(Ease(88, 15, p) + 0.5) or 88))
+            end
+        end
+    elseif phase == "out" then
+        SetShoulder(Ease(cam.from.shoulder, cam.to.shoulder, p))
     else
-        ConsoleExec("pitchlimit " .. math.floor(OutSine(t, 88, 15) + 0.5))
-    end
-end
-
--- No speaker: the offset follows the zoom.
-local function Pan_OnUpdate(_, elapsed)
-    cam.t = cam.t + elapsed
-    if cam.t > 0.03 then
-        cam.t = 0
+        -- No speaker: the offset follows the zoom.
         local goal = cam.multiplier * PanOffset()
-        local amount = math.min(cam.blend * elapsed * 60, 1)
-        SetShoulder(cam.shoulderNow + (goal - cam.shoulderNow) * amount)
+        SetShoulder(cam.shoulderNow + (goal - cam.shoulderNow) * math.min(cam.blend * elapsed * 60, 1))
+    end
+
+    local zoomDone = StepZoom(elapsed)
+
+    if p >= 1 then
+        if phase == "in" then
+            cam.phase = "on"
+        elseif phase == "out" and zoomDone then
+            Finish()
+            return
+        end
+    end
+    -- Settled: nothing left to move until something changes.
+    if cam.phase == "on" and cam.mode == "focus" and zoomDone and not cam.measuring then
+        driver:SetScript("OnUpdate", nil)
     end
 end
 
 -- ---------------------------------------------------------------------------
 -- Start / restore
 -- ---------------------------------------------------------------------------
-local function ListenWhileActive(on)
-    local list = { "PLAYER_MOUNT_DISPLAY_CHANGED", "PLAYER_IS_GLIDING_CHANGED", "UPDATE_SHAPESHIFT_FORM" }
-    for _, event in ipairs(list) do
-        if on then pcall(events.RegisterEvent, events, event) else pcall(events.UnregisterEvent, events, event) end
-    end
-end
-
 local function Start()
-    if cam.active then return end
+    if cam.phase == "in" or cam.phase == "on" then return end
     BlockWarning()
-    cam.active = true
-    cam.backup = {}
-    plugin.db.cameraBackup = cam.backup   -- saved until restored
-    cam.oldZoom = GetCameraZoom()
+    -- Opened again while easing back: carry on from here, same backup.
+    local resuming = cam.phase == "out"
+    if not resuming then
+        cam.backup = {}
+        plugin.db.cameraBackup = cam.backup   -- saved until restored
+        cam.oldZoom = GetCameraZoom()
+    end
+    local zoomNow = ZoomTarget()
+    cam.zoom = nil
+    cam.phase, cam.t = "in", 0
     cam.onRight = WindowOnRight()
-    cam.fovStart = nil
-    cam.t = 0
     UpdateMultiplier()
     UpdateForm()
-    ListenWhileActive(true)
+    events:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
+    pcall(events.RegisterEvent, events, "PLAYER_IS_GLIDING_CHANGED")
+    events:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
 
     if HasSpeaker() then
         cam.mode = "focus"
-        for cvar, value in pairs(FOCUS_CVARS) do BackupAndSet(cvar, value) end
-        Backup("test_cameraOverShoulder")
+        for cvar, value in pairs(FOCUS_CVARS) do
+            if cvar == STRENGTH then Backup(cvar) else BackupAndSet(cvar, value) end
+        end
+        Backup(SHOULDER)
+        cam.from = { strength = Num(STRENGTH, 0), shoulder = Num(SHOULDER, 0) }
+        cam.to = { strength = 1, shoulder = cam.multiplier * cam.shoulder }
         if not IsDynamicFlying() then
             -- Not while mounted or gliding: skyriding's speed effect changes it too.
             Backup("cameraFov")
-            cam.fovStart = tonumber(GetCVar("cameraFov")) or 90
+            cam.from.fov, cam.to.fov = Num("cameraFov", 90), FOV_ZOOMED
         end
-        SetShoulder(cam.multiplier * cam.shoulder)
-        driver:SetScript("OnUpdate", Focus_OnUpdate)
+        cam.measuring = true
+        cam.measureId = cam.measureId + 1
+        local id = cam.measureId
         MeasureSpeaker(function(height)
-            if not (cam.active and cam.mode == "focus") then return end
+            if id ~= cam.measureId or cam.mode ~= "focus" or not (cam.phase == "in" or cam.phase == "on") then return end
+            cam.measuring = false
             local goal = ZoomForHeight(height or FALLBACK_HEIGHT)
-            if goal then ZoomTo(goal, true) end
+            if goal and goal < zoomNow then
+                EaseZoomTo(goal, math.max(EASE_TIME - cam.t, MIN_ZOOM_TIME))
+            end
+            StartDriver()
         end)
     else
         cam.mode = "pan"
-        BackupAndSet("test_cameraOverShoulder")
+        cam.measuring = false
+        -- Back from a speaker mid-ease: the focus settings go straight back.
+        for _, cvar in ipairs({ "test_cameraTargetFocusInteractEnable", STRENGTH }) do
+            if cam.backup[cvar] ~= nil then Set(cvar, cam.backup[cvar]) end
+        end
+        BackupAndSet(SHOULDER)
         BackupAndSet("CameraKeepCharacterCentered", 0)
         BackupAndSet("CameraReduceUnexpectedMovement", 0)
-        cam.shoulderNow = tonumber(GetCVar("test_cameraOverShoulder")) or 0
+        cam.shoulderNow = Num(SHOULDER, 0)
         cam.blend = (cam.multiplier * PanOffset() - cam.shoulderNow > 8) and 0.06 or 0.10
-        driver:SetScript("OnUpdate", Pan_OnUpdate)
-        ZoomTo(3, true)
+        if zoomNow > 3 then EaseZoomTo(3, EASE_TIME) end
     end
+    StartDriver()
 end
 
-local function Restore()
-    if not cam.active then return end
-    cam.active = false
-    driver:SetScript("OnUpdate", nil)
-    ListenWhileActive(false)
-    RestoreCVars(cam.backup)
-    cam.backup = nil
-    plugin.db.cameraBackup = nil
-    if cam.oldZoom then ZoomTo(cam.oldZoom) end
-    cam.oldZoom, cam.mode, cam.fovStart = nil, nil, nil
+-- instant: combat, logout, or the camera turned off.
+local function Restore(instant)
+    if not cam.phase then return end
+    if instant then
+        local goal = cam.oldZoom
+        local now = ZoomTarget()
+        Finish()
+        if goal then ZoomBy(goal - now) end
+        return
+    end
+    if cam.phase == "out" then return end
+    if cam.phase == "in" then ConsoleExec("pitchlimit 88") end
+    cam.phase, cam.t = "out", 0
+    cam.measuring = false
+    cam.measureId = cam.measureId + 1   -- a late measurement is ignored
+    local backup = cam.backup
+    cam.from = { strength = Num(STRENGTH, 0), shoulder = Num(SHOULDER, 0) }
+    cam.to = { strength = tonumber(backup[STRENGTH]) or 0, shoulder = tonumber(backup[SHOULDER]) or 0 }
+    if backup.cameraFov ~= nil then
+        cam.from.fov, cam.to.fov = Num("cameraFov", 90), tonumber(backup.cameraFov)
+    end
+    if cam.oldZoom then EaseZoomTo(cam.oldZoom, EASE_TIME) end
+    StartDriver()
 end
 
 local function CameraOn()
@@ -339,11 +425,12 @@ local function CameraOn()
 end
 
 local function Update()
-    local want = CameraOn() and ShownWindow() and not inCombat and not InCombatLockdown()
-    if want and not cam.active then
+    local fighting = inCombat or InCombatLockdown()
+    local want = CameraOn() and ShownWindow() and not fighting
+    if want then
         Start()
-    elseif not want and cam.active then
-        Restore()
+    elseif cam.phase then
+        Restore(fighting or not CameraOn())
     end
 end
 plugin.UpdateCamera = Update
@@ -365,25 +452,30 @@ local function OnWindowHide()
     end)
 end
 
+-- Mounted, shapeshifted, started gliding: the side offset (and field of
+-- view) follow.
+local function OnPlayerChanged()
+    if not (cam.phase == "in" or cam.phase == "on") then return end
+    UpdateMultiplier()
+    UpdateForm()
+    if cam.mode ~= "focus" then return end   -- the pan follows on its own
+    cam.to.shoulder = cam.multiplier * cam.shoulder
+    if cam.phase == "on" then SetShoulder(cam.to.shoulder) end
+    if cam.to.fov and IsDynamicFlying() and cam.backup.cameraFov ~= nil then
+        cam.from.fov, cam.to.fov = nil, nil   -- the ease stops changing it
+        Set("cameraFov", cam.backup.cameraFov)
+    end
+end
+
 events:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
         -- InCombatLockdown() can still be false during REGEN_DISABLED.
         inCombat = event == "PLAYER_REGEN_DISABLED"
         Update()
     elseif event == "PLAYER_LOGOUT" or event == "PLAYER_CAMPING" or event == "PLAYER_QUITING" then
-        Restore()
-    elseif not cam.active then
-        return
-    elseif event == "UPDATE_SHAPESHIFT_FORM" then
-        UpdateForm()
-        MoveToFinalOffset()
-    else   -- mounted, dismounted, started or stopped gliding
-        UpdateMultiplier()
-        MoveToFinalOffset()
-        if cam.fovStart and IsDynamicFlying() and cam.backup.cameraFov ~= nil then
-            cam.fovStart = nil   -- the ease stops changing it
-            Set("cameraFov", cam.backup.cameraFov)
-        end
+        Restore(true)
+    else
+        OnPlayerChanged()
     end
 end)
 
