@@ -20,6 +20,9 @@
 --               window or the small box (SpokenBox.lua) is open, given back
 --               when they close
 --   Hand-off    a window closing mid-line offers that line to the small box
+--               (with the XpieUI narrator style, SpokenBox.lua asks
+--               SpokenWindowHolds instead: lines the window doesn't show go
+--               to the box)
 --
 -- The quest text frames are shared with the world map: they're only marked
 -- while the quest window owns them, and always put back first.
@@ -30,6 +33,7 @@ local plugin = core.questPlugin
 local WINDOWS = { "QuestFrame", "GossipFrame", "ItemTextFrame" }
 local TICK = 0.05
 local UNHOST_DELAY = 0.15          -- gossip -> quest: one window closes before the next opens
+local MATCH_GRACE = 0.4            -- a new page or window gets this long to find the line
 local SCROLL_LEAD = 0.2            -- share of the view kept above the word when scrolling
 local SCROLL_EDGE = 0.85           -- scroll once the word passes this far down the view
 
@@ -47,6 +51,7 @@ local hostToken = 0
 local settingOurs = false          -- our own SetText on the book page
 local bookText                     -- what Blizzard last put on the book page
 local offer                        -- { clip, left, top, scale }: the line of the window that just closed
+local invalidatedAt = 0            -- GetTime() of the last page change, window show or hide
 
 local function Api() return plugin.SpokenApi and plugin.SpokenApi() end
 
@@ -226,7 +231,9 @@ end
 
 local function Invalidate()
     Restore()
+    invalidatedAt = GetTime()
     state.paragraphs, state.clip, state.map, state.span = nil, nil, nil, nil
+    state.matchedClip = nil
     state.dirty, state.scrolledTo, state.scrollSet, state.userScrolled = true, nil, nil, nil
 end
 plugin.InvalidateSpokenWords = Invalidate
@@ -336,6 +343,17 @@ local function OnUpdate(_, elapsed)
     end
 end
 
+-- Does an open window show `clip` in its own text? Asked by the narrator box:
+-- true while a window has just opened or turned a page and is still looking
+-- for the line, false once it's clear the line isn't there (zone lore over a
+-- quest window, say), or with the highlighting off.
+function plugin.SpokenWindowHolds(clip)
+    if not ShownWindow() then return false end
+    if not WordsOn() then return false end
+    if state.clip == clip and state.map then return true end
+    return GetTime() - invalidatedAt < MATCH_GRACE
+end
+
 -- ---------------------------------------------------------------------------
 -- Spoken's own player
 -- ---------------------------------------------------------------------------
@@ -354,11 +372,18 @@ end
 -- ---------------------------------------------------------------------------
 local function Update()
     local on = plugin.SpokenOn and plugin.SpokenOn()
-    if not on and plugin.HideSpokenBox then plugin.HideSpokenBox(true) end
+    -- With our narrator style, Spoken shows none of its own windows and the
+    -- box is the player's choice there, so it stays whatever this setting.
+    local narrator = plugin.SpokenNarratorActive and plugin.SpokenNarratorActive()
+    if not on and not narrator and plugin.HideSpokenBox then plugin.HideSpokenBox(true) end
     local windowOpen = on and ShownWindow() ~= nil
     local open = windowOpen or (on and plugin.SpokenBoxShown and plugin.SpokenBoxShown())
     hostToken = hostToken + 1
-    if open then
+    if narrator then
+        -- Nothing of Spoken's to hide; hosting would also stop its narrator updates.
+        offer = nil
+        SetHosted(false)
+    elseif open then
         SetHosted(true)
     end
     if not windowOpen and (hosted or offer) then
@@ -398,7 +423,8 @@ function plugin:InitSpokenWords()
             -- Put the text back at once: the map may take QuestInfo next.
             frame:HookScript("OnHide", function()
                 local clip = state.matchedClip
-                if clip and plugin.SpokenOn and plugin.SpokenOn() then
+                local narrator = plugin.SpokenNarratorActive and plugin.SpokenNarratorActive()
+                if clip and not narrator and plugin.SpokenOn and plugin.SpokenOn() then
                     offer = { clip = clip, left = frame:GetLeft(), top = frame:GetTop(), scale = frame:GetEffectiveScale() }
                 end
                 Invalidate()

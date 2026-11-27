@@ -188,6 +188,7 @@ function plugin:BuildSettings(page)
         page:Header("Spoken")
         page:Checkbox({ key = "spoken", label = "Spoken Integration",
             description = "Spoken's controls (Play/Stop, Previous, Next and Report) sit at the top of the quest, gossip and book windows, and the words being read are highlighted in the window's own text. Spoken's own player and subtitles stay hidden while a window is open. Off: Spoken works exactly as it does on its own." })
+        page:Note("For every other line (zone lore, bosses, books and chatter), choose the XpieUI narrator style in Spoken's settings: those lines then show in XpieUI's small box at the top of the screen, with the words highlighted. Lines a quest, gossip or book window shows stay in that window.")
         local swatches = {
             { hex = "ffffff", name = "White" },
             { hex = "ffd100", name = "Gold" },

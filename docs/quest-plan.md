@@ -263,6 +263,12 @@ It's built on Spoken's documented public API (`Spoken/API.lua`, `API_VERSION` 1)
 - **Turning it off** calls `SetPlayerHost(nil)`, and Spoken's normal setup comes back. We never change Spoken's saved settings.
 - **Probe result:** `SetPlayerHost(hiddenFrame)` hides both Spoken's player and its subtitles. No fallback is needed.
 
+**The XpieUI narrator style:** without it, lines no quest window shows (zone lore, bosses, books, chatter) appear in Spoken's own player, or nowhere while a window is open.
+- **How it works:** the small box is registered as a Spoken narrator style, "XpieUI" (`Spoken:RegisterNarrator`, Public API). When the player picks it in Spoken's settings, Spoken shows none of its own windows and passes every line to the box. `Spoken:SuggestNarrator` offers it once, ever, in Spoken's own window.
+- **Where a line shows:** a quest, gossip or book window keeps a line it shows itself (`SpokenWindowHolds`; 0.4s grace while a page is matched). Any other line shows in the box, whether a window is open or not.
+- **Hosting:** while it's the style, `SetPlayerHost` isn't used. There's nothing of Spoken's to hide, and hosting would stop its narrator updates.
+- **With the Spoken Integration setting off:** the box still narrates, because the player chose the style in Spoken. The rows and the window highlighting are off.
+
 **The small tooltip-style box** (the user's screenshot 1): if the window closes while a line is still being read, the line carries on in a small box.
 - **Look:** Blizzard's tooltip look (`TooltipDefaultLayout` NineSlice, GameTooltip fonts).
 - **Contents:**
