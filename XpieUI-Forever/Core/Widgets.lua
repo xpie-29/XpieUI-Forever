@@ -418,6 +418,129 @@ function PageMixin:TextInput(opt)
     return box
 end
 
+-- White label, a row of colour swatches and a hex box ("rrggbb"). The value
+-- is the hex string. opt.swatches = { { hex = "9c1a1a", name = "Spoken Red" }, ... };
+-- a swatch whose value isn't a colour ("class") gives rgb = function() end
+-- for its fill and boxText for the hex box.
+-- Gamepad: D-pad left/right step through the swatches, A toggles the hex box.
+local SWATCH, SWATCH_GAP = 22, 6
+local GOLD = { 1, 0.82, 0 }
+
+local function HexToRGB(hex)
+    hex = type(hex) == "string" and hex:match("^#?(%x%x%x%x%x%x)$")
+    if not hex then return nil end
+    return tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255
+end
+addon.HexToRGB = HexToRGB
+
+function PageMixin:ColorChoice(opt)
+    local page = self
+    local label = Text(self.content, "GameFontHighlightMedium", 190)
+    label:SetPoint("TOPLEFT", 22, self.y - 8)
+    label:SetText(opt.label)
+
+    local swatches = {}
+    for index, entry in ipairs(opt.swatches) do
+        local button = CreateFrame("Button", nil, self.content)
+        button:SetSize(SWATCH, SWATCH)
+        button:SetPoint("TOPLEFT", 220 + (index - 1) * (SWATCH + SWATCH_GAP), self.y - 5)
+        button.border = button:CreateTexture(nil, "BACKGROUND")
+        button.border:SetAllPoints()
+        button.fill = button:CreateTexture(nil, "ARTWORK")
+        button.fill:SetPoint("TOPLEFT", 2, -2)
+        button.fill:SetPoint("BOTTOMRIGHT", -2, 2)
+        if entry.rgb then
+            local r, g, b = entry.rgb()
+            button.fill:SetColorTexture(r or 1, g or 1, b or 1)
+        else
+            button.fill:SetColorTexture(HexToRGB(entry.hex))
+        end
+        button:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+        button:SetScript("OnClick", function()
+            page:SetValue(opt, entry.hex)
+            page:Refresh()
+        end)
+        button:SetScript("OnEnter", function(b)
+            GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
+            GameTooltip:SetText(entry.name)
+            GameTooltip:Show()
+        end)
+        button:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        button.hex, button.boxText = entry.hex, entry.boxText
+        swatches[index] = button
+    end
+
+    local box = CreateFrame("EditBox", nil, self.content, "InputBoxTemplate")
+    box:SetPoint("TOPLEFT", 220 + #swatches * (SWATCH + SWATCH_GAP) + 12, self.y - 4)
+    box:SetSize(70, 24)
+    box:SetAutoFocus(false)
+    box:SetMaxLetters(7)
+    local function Commit(eb)
+        local typed = strtrim(eb:GetText() or "")
+        for _, swatch in ipairs(swatches) do
+            if swatch.boxText and typed:lower() == swatch.boxText:lower() then
+                if swatch.hex ~= page:GetValue(opt) then page:SetValue(opt, swatch.hex) end
+                page:Refresh()
+                return
+            end
+        end
+        local hex = typed:match("^#?(%x%x%x%x%x%x)$")
+        if hex then
+            hex = hex:lower()
+            if hex ~= page:GetValue(opt) then page:SetValue(opt, hex) end
+        end
+        page:Refresh()
+    end
+    box:SetScript("OnEnterPressed", function(eb) Commit(eb); eb:ClearFocus() end)
+    box:SetScript("OnEditFocusLost", Commit)
+    local function BoxText(value)
+        for _, swatch in ipairs(swatches) do
+            if swatch.hex == value and swatch.boxText then return swatch.boxText end
+        end
+        return value or ""
+    end
+    box:SetScript("OnEscapePressed", function(eb)
+        eb:SetText(BoxText(page:GetValue(opt)))
+        eb:ClearFocus()
+    end)
+    self.editBoxes[#self.editBoxes + 1] = box
+
+    self:AddFocus(label, function(button)
+        if button == "PAD1" then
+            if box:HasFocus() then box:ClearFocus() else box:SetFocus() end
+            return
+        end
+        local current = 0
+        for index, swatch in ipairs(swatches) do
+            if swatch.hex == page:GetValue(opt) then current = index end
+        end
+        local step = button == "PADDLEFT" and -1 or 1
+        if current == 0 then current = step > 0 and 0 or 1 end
+        swatches[(current - 1 + step) % #swatches + 1]:Click()
+    end, true)
+
+    local height = 34
+    if opt.description and opt.description ~= "" then
+        local description = Text(self.content, "GameFontHighlightSmall", TEXT_WIDTH - 20)
+        description:SetPoint("TOPLEFT", 22, self.y - 34)
+        description:SetText(opt.description)
+        height = height + math.ceil(description:GetStringHeight() or 0) + 4
+    end
+
+    self.refreshers[#self.refreshers + 1] = function()
+        local value = page:GetValue(opt)
+        for _, swatch in ipairs(swatches) do
+            if swatch.hex == value then
+                swatch.border:SetColorTexture(GOLD[1], GOLD[2], GOLD[3])
+            else
+                swatch.border:SetColorTexture(0, 0, 0, 0.8)
+            end
+        end
+        if not box:HasFocus() then box:SetText(BoxText(value)) end
+    end
+    self.y = self.y - height - 8
+end
+
 -- Background panel controls for a style table from XpieUI.PANEL_DEFAULTS.
 -- The art is always Blizzard's (Quest Tracker or Tooltip look); players get
 -- the look, opacity, header/border on-off, title and padding. getStyle()
