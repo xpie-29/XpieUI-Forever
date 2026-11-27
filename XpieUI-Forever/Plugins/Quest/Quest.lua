@@ -33,7 +33,7 @@ local plugin = core:RegisterPlugin("quest", {
         keyboard = true,  -- keyboard controls, badges and hints (keyboard & mouse only)
         camera   = true,  -- Speaker Camera
         spoken   = true,  -- Spoken Integration (only when Spoken is installed)
-        spokenLight = "0070dd",   -- Parchment Highlight: bright blue: Spoken's deep red
+        spokenLight = "ffffff",   -- Parchment Highlight: white: Spoken's deep red
         spokenDark  = "ffd100",   -- Dark Highlight: Spoken's gold
         -- cameraBackup: camera settings to put back, kept only mid-conversation
         -- point: { left, top } of the windows in UIParent units (absent =
@@ -168,11 +168,11 @@ function plugin:BuildSettings(page)
         page:Checkbox({ key = "spoken", label = "Spoken Integration",
             description = "Spoken's controls (Play/Stop, Previous, Next and Report) sit at the top of the quest, gossip and book windows, and the words being read are highlighted in the window's own text. Spoken's own player and subtitles stay hidden while a window is open. Off: Spoken works exactly as it does on its own." })
         local swatches = {
+            { hex = "ffffff", name = "White" },
+            { hex = "ffd100", name = "Gold" },
             { hex = "0070dd", name = "Bright Blue" },
             { hex = "9c1a1a", name = "Spoken Red" },
-            { hex = "ffd100", name = "Gold" },
             { hex = "1e7a1e", name = "Green" },
-            { hex = "ffffff", name = "White" },
             { hex = "2b1a0e", name = "Black-Brown" },
             { hex = "class", name = "Class Colour", boxText = "class",
               rgb = function() return core.HexToRGB(plugin:ClassColorHex() or "ffffff") end },
@@ -215,10 +215,10 @@ function plugin:OnLogin()
         self.db.point = XpieUIForeverDB.probeMovePoint
     end
     XpieUIForeverDB.probeMovePoint = nil
-    -- The first parchment default (Spoken's red) was hard to see: move to the new one once.
-    if not self.db.spokenLightV2 then
-        if self.db.spokenLight == "9c1a1a" then self.db.spokenLight = "0070dd" end
-        self.db.spokenLightV2 = true
+    -- Earlier parchment defaults (Spoken's red, then blue) move to white once.
+    if not self.db.spokenLightV3 then
+        if self.db.spokenLight == "9c1a1a" or self.db.spokenLight == "0070dd" then self.db.spokenLight = "ffffff" end
+        self.db.spokenLightV2, self.db.spokenLightV3 = nil, true
     end
     XpieUIForeverDB.probeLog = nil
 

@@ -1,7 +1,7 @@
 -- SpokenBox.lua  (XpieUI-Forever, Quest module)
 -- Spoken Integration, part three: when a quest, gossip or book window closes
 -- while its line is still being read, the line carries on in a small box in
--- Blizzard's tooltip look, where the window was.
+-- Blizzard's tooltip look, at the top centre of the screen.
 --
 --   Contents    the speaker's round face (Spoken:CreateSpeakerFace), the
 --               speaker and the quest title, Spoken's control row, and the
@@ -24,6 +24,7 @@ local TICK = 0.05
 local FADE_TIME = 0.3
 local SCROLL_LEAD = 0.2
 local SCROLL_EDGE = 0.85
+local TOP_OFFSET = -60       -- below the top edge of the screen
 
 local box, face, header, label, scroll, child, text
 local line                  -- { clip, paragraphs, map, span, lit, neighbor, cutP, cutByte, full }
@@ -217,12 +218,7 @@ function plugin.ShowSpokenBox(offer)
     Layout()
 
     box:ClearAllPoints()
-    if offer.left and offer.top then
-        local ratio = (offer.scale or 1) / UIParent:GetEffectiveScale()
-        box:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", offer.left * ratio, offer.top * ratio)
-    else
-        box:SetPoint("CENTER", UIParent, "CENTER", 0, 150)
-    end
+    box:SetPoint("TOP", UIParent, "TOP", 0, TOP_OFFSET)
     fading, elapsedSince = nil, TICK
     box:SetAlpha(1)
     box:Show()

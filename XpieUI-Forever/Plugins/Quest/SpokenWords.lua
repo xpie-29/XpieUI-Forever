@@ -33,7 +33,7 @@ local UNHOST_DELAY = 0.15          -- gossip -> quest: one window closes before 
 local SCROLL_LEAD = 0.2            -- share of the view kept above the word when scrolling
 local SCROLL_EDGE = 0.85           -- scroll once the word passes this far down the view
 
-plugin.SPOKEN_LIGHT = "0070dd"     -- bright blue, on parchment
+plugin.SPOKEN_LIGHT = "ffffff"     -- white, on parchment
 plugin.SPOKEN_DARK = "ffd100"      -- Spoken's gold, on dark pages
 plugin.SPOKEN_CLASS = "class"      -- the player's class colour
 

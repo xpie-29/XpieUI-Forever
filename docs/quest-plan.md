@@ -215,7 +215,7 @@ The integration is turned on automatically when Spoken is installed, and turned 
 | Setting | Default |
 |---|---|
 | Spoken Integration | **on** when Spoken is loaded; hidden when it isn't |
-| Parchment Highlight | bright blue `#0070dd` (Spoken's deep red was hard to see; saved red values move to blue once) |
+| Parchment Highlight | white `#ffffff` (Spoken's red, then blue, were hard to see; saved values of either move to white once) |
 | Dark Highlight | Spoken's gold `#ffd100` |
 
 Either colour can also be **Class Colour** (stored as `"class"`, the player's class colour at draw time).
@@ -270,7 +270,7 @@ It's built on Spoken's documented public API (`Spoken/API.lua`, `API_VERSION` 1)
   - the speaker and quest title
   - the control row
   - the line's text with the highlight in the dark colour
-- **Placement:** it sits where the dialog window was, using the shared position, and stays visible while the rest of the UI is still faded.
+- **Placement:** top centre of the screen (60 below the top edge). It stays visible while the rest of the UI is still faded.
 - **Gone:** when the line ends or is skipped, the box fades out. Opening a new dialog moves it back into the window.
 - **Built (Delivery 6c):** `SpokenBox.lua`.
   - Only the line the window was showing (the last one matched in its text) moves to the box, and only if it's still at the head of Spoken's queue 0.15s after the window closed (so gossip -> quest doesn't flash it).
