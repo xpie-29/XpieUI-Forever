@@ -1,0 +1,16 @@
+## Interface: 16001
+## Title: XpieUI Forever
+## Notes: Settings shell with plugins that make popular addons match the native WoW Forever UI.
+## Author: Xpie
+## Version: 0.1.0
+## SavedVariables: XpieUIForeverDB
+## IconTexture: Interface\Icons\INV_Misc_Gear_01
+## Category-enUS: User Interface
+
+Core\Core.lua
+Core\Plugins.lua
+Core\Panels.lua
+Core\Widgets.lua
+Core\Settings.lua
+
+Plugins\Zygor\Zygor.lua
