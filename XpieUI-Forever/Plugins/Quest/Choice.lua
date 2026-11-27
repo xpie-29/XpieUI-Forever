@@ -1,8 +1,10 @@
 -- Choice.lua  (XpieUI-Forever, Quest module)
--- XpieUI's quest module and the other quest-window addon (plugin.otherAddon)
--- can't run together. When both are on at login, this asks which one to keep:
---   Use XpieUI      the other addon is turned off (every character), UI reloads
---   Use the other   XpieUI's quest module turns itself off, no reload
+-- XpieUI's quest module can't run beside the quest-window addons listed in
+-- Quest.lua (INCOMPATIBLE). When one of them is on at login, this asks which
+-- to keep, with a button for XpieUI and one for each that's running:
+--   Use XpieUI      the others are turned off (every character), UI reloads
+--   Use <addon>     XpieUI's quest module turns itself off (and any other
+--                   listed addon), reloading only if something else was running
 -- The window can't be dismissed any other way (no Esc, no close button).
 --
 -- Not a StaticPopup: addon popups break Forever's controller UI. The window
@@ -16,8 +18,11 @@ local plugin = core.questPlugin
 local WIDTH, HEIGHT = 520, 190
 local BUTTON_WIDTH, BUTTON_HEIGHT = 200, 36
 
+local BUTTON_GAP = 20
+
 local frame, pointer, buttons
-local focus = 1          -- 1 = XpieUI, 2 = the other addon
+local choices            -- [index] = nil for XpieUI, else the addon's name
+local focus = 1          -- 1 = XpieUI, then the running incompatible addons
 local usingPad = false
 
 local function UpdateFocus()
@@ -37,7 +42,7 @@ local function Pick(index)
     if SOUNDKIT then PlaySound(SOUNDKIT.IG_MAINMENU_OPTION) end
     frame:Hide()
     frame.done = true
-    if index == 1 then plugin:UseXpieUI() else plugin:UseOtherAddon() end
+    if index == 1 then plugin:UseXpieUI() else plugin:UseOtherAddon(choices[index]) end
 end
 
 local function Move(delta)
@@ -63,13 +68,14 @@ local function HandleInput(key)
     return true
 end
 
-local function CreateButton(index, text)
+local function CreateButton(index, text, count)
     local ok, button = pcall(CreateFrame, "Button", nil, frame, "MainMenuFrameButtonTemplate")
     if not ok then button = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate") end
     button:SetText(text)
     button:SetSize(BUTTON_WIDTH, BUTTON_HEIGHT)
     button:ClearAllPoints()
-    button:SetPoint("BOTTOM", frame, "BOTTOM", (index == 1 and -1 or 1) * (BUTTON_WIDTH / 2 + 10), 24)
+    local x = (index - (count + 1) / 2) * (BUTTON_WIDTH + BUTTON_GAP)
+    button:SetPoint("BOTTOM", frame, "BOTTOM", x, 24)
     button:SetScript("OnClick", function() Pick(index) end)
     button:HookScript("OnEnter", function() focus = index; UpdateFocus() end)
     return button
@@ -77,7 +83,12 @@ end
 
 local function CreateChoiceWindow()
     frame = CreateFrame("Frame", "XpieUIForeverQuestChoice", UIParent)
-    frame:SetSize(WIDTH, HEIGHT)
+    local others = plugin:LoadedOthers()
+    choices = { false }
+    for _, name in ipairs(others) do choices[#choices + 1] = name end
+    local count = #choices
+    local width = math.max(WIDTH, count * (BUTTON_WIDTH + BUTTON_GAP) + 40)
+    frame:SetSize(width, HEIGHT)
     frame:SetPoint("CENTER", 0, 120)
     frame:SetFrameStrata("FULLSCREEN_DIALOG")
     frame:SetToplevel(true)
@@ -103,16 +114,17 @@ local function CreateChoiceWindow()
 
     local text = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     text:SetPoint("TOP", title, "BOTTOM", 0, -14)
-    text:SetWidth(WIDTH - 60)
-    local other = plugin.otherAddon
+    text:SetWidth(width - 60)
+    local other = plugin:JoinNames(others)
     text:SetText(("XpieUI's Quest module isn't compatible with %s. Which one would you like to use for quests and dialogue?"):format(other))
 
     local note = frame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
     note:SetPoint("TOP", text, "BOTTOM", 0, -8)
-    note:SetWidth(WIDTH - 60)
-    note:SetText(("XpieUI turns %s off and reloads. You can switch later on the Quest Windows page of /xui."):format(other))
+    note:SetWidth(width - 60)
+    note:SetText(("XpieUI turns %s off and reloads. You can switch later on the Quest Windows page of /xui."):format(plugin:JoinNames(others, "and")))
 
-    buttons = { CreateButton(1, "Use XpieUI"), CreateButton(2, "Use " .. other) }
+    buttons = { CreateButton(1, "Use XpieUI", count) }
+    for i = 2, count do buttons[i] = CreateButton(i, "Use " .. choices[i], count) end
     pointer = core.CreateGoldPointer(frame)
     pointer:SetFrameLevel(frame:GetFrameLevel() + 20)
 
@@ -153,8 +165,8 @@ local function CreateChoiceWindow()
     end)
 end
 
--- Called at login while the other addon is loaded and the module is on. A
--- short wait lets the loading screen and that addon's own start-up finish.
+-- Called at login while an incompatible addon is loaded and the module is on.
+-- A short wait lets the loading screen and that addon's own start-up finish.
 function plugin:ShowChoice()
     C_Timer.After(2, function()
         if not (plugin.active and plugin:OtherAddonLoaded()) then return end

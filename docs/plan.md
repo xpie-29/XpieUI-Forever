@@ -11,7 +11,7 @@ Decisions already made:
 | Topic | Decision |
 |---|---|
 | Packaging | One addon folder, `XpieUI-Forever`, with plugins built in. Each plugin turns on only when its target addon is loaded, and has its own Enabled switch. |
-| Shell scope | Settings panel, plugin registry, native background panels and settings widgets. No quest window features (DialogueUI is installed). |
+| Shell scope | Settings panel, plugin registry, native background panels and settings widgets. No quest window features (the Quest plugin covers those). |
 | Art | Blizzard's built-in Forever art only. The one exception is Zygor's gold arrow, `arrow.tga`, copied from `_assets`. |
 | Code | Port and adapt XpieHUD. |
 

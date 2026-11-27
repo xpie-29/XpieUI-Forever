@@ -2,20 +2,19 @@
 
 ## Decision
 
-DialogueUI is dropped as the quest window. If both are installed, the user picks one on screen and XpieUI turns the other off (see section 0). Instead we keep **Blizzard's own** quest, gossip and book windows, with Blizzard's look and Blizzard's controller support left exactly as they are. We add only a few small things on top.
+We keep **Blizzard's own** quest, gossip and book windows, with Blizzard's look and Blizzard's controller support left exactly as they are, and add only a few small things on top. Quest-window addons that replace those windows can't run alongside this module; if one is installed, the user picks on screen and XpieUI turns the other off (see section 0).
 
 | Feature | Keyboard & mouse | Controller (Forever's gamepad UI) |
 |---|---|---|
 | One shared, saved window position | yes | yes |
 | Font size | yes | yes |
 | Hide the rest of the UI while talking | yes | yes |
-| Camera: zoom in on the speaker (DialogueUI's "Zoom In" at multiplier 4), one fixed position | yes | yes (the user confirmed in game that DialogueUI's version works with the controller) |
+| Camera: zoom in on the speaker, one fixed behaviour | yes | yes |
 | Keyboard controls, number badges, key hints, tooltips at the cursor | yes | off; Blizzard's prompts are used |
 | Spoken integration (on by default when Spoken is installed): controls on the window, highlighted words in a colour the user picks, a small box when the window closes mid-line | yes | yes |
 
 Not wanted:
 - the XpieHUD Parchment look
-- DialogueUI's options
 - any custom window art
 - trainer/vendor "follow" windows
 - camera options or zoom levels
@@ -32,28 +31,29 @@ From `_assets/XpieHUD-main/XpieHUD_Core/QuestDialog.lua` (GPL-3, the user's own 
 | `FadeUI` / `RestoreUI` (alpha only, restored at once when combat starts, minimap moved away rather than faded) | Hiding the UI, as one switch with a fixed list |
 | The key frame (`SetPropagateKeyboardInput` only out of combat, reset on key-up), `SelectGossip` through the gossip ScrollBox data provider, greeting buttons, reward choices, `HandleSpace` with the PvP and gold-cost exceptions | Keyboard controls |
 | Badges (option, quest and reward styles) and the Space/Esc hints | Kept, with the refinements below |
-
 | Tooltips at the cursor while talking: a `GameTooltip_SetDefaultAnchor` post-hook, plus moving the tooltip that's already open when the window appears | Keyboard & mouse only |
 
 Not used: the Parchment addon, its 6 MB of masks, the quest-look hand-off, Guide Addons, followers, and the per-group hide toggles.
 
 ## The plugin
 
-- **Files:** `Plugins/Quest/` holds `Quest.lua` (registration, settings, status), `Choice.lua` (the XpieUI-or-DialogueUI note), `Position.lua`, `Fonts.lua`, `HideUI.lua`, `Keys.lua`, `Badges.lua`, `Camera.lua` and `Spoken.lua`.
-- **Registration:** `RegisterPlugin("quest", {...})` with no target addon, because it styles Blizzard's own windows.
-- **If DialogueUI is loaded,** the user picks which quest module to use (see "Choosing between XpieUI and DialogueUI" below).
+- **Files:** `Plugins/Quest/` holds `Quest.lua` (registration, settings, status, the incompatible-addons list), `Choice.lua` (the choice window), `Position.lua`, `Fonts.lua`, `HideUI.lua`, `Camera.lua`, `Keys.lua`, `Badges.lua` and `Spoken.lua`.
+- **Registration:** `RegisterPlugin("quest", {...})` with no target addon, because it works on Blizzard's own windows.
+- **If an incompatible addon is loaded,** the user picks which quest module to use (section 0).
 
-### 0. Choosing between XpieUI and DialogueUI
+### 0. Incompatible quest-window addons
 
-The two can't run together: DialogueUI takes over Blizzard's quest and gossip windows, and our plugin works on them.
+Some addons replace Blizzard's quest and gossip windows, and this module works on those windows, so the two can't run together.
 
-**When the choice appears:** at login or reload, if DialogueUI is loaded and the Quest plugin is enabled.
-- Until the user chooses, the Quest plugin stays inactive (no hooks, no keys, no camera) and DialogueUI works as normal.
+**The list:** `INCOMPATIBLE` at the top of `Quest.lua`, by addon folder name. To cover another addon, add its folder name there; the choice window, the Quest Module setting and the status line all follow. The names appear nowhere else in the code, only in that list and in the text the player reads.
+
+**When the choice appears:** at login or reload, if any listed addon is loaded and the Quest plugin is enabled.
+- Until the user chooses, the Quest plugin stays inactive (no hooks, no keys, no camera) and the other addon works as normal.
 - If the user is in combat, the choice waits until combat ends.
 
 **The note:** a small XpieUI window in the middle of the screen, in the same native style as the XpieUI settings window. It's not a StaticPopup: those break the controller UI (see the gamepad-taint memory).
-- It reads: "XpieUI's Quest module isn't compatible with DialogueUI. Which one would you like to use for quests and dialogue?"
-- It has two buttons, **Use XpieUI** and **Use DialogueUI**, and both work with mouse, keyboard and controller:
+- It reads: "XpieUI's Quest module isn't compatible with <addon>. Which one would you like to use for quests and dialogue?" (several running addons are joined: "A or B").
+- It has a **Use XpieUI** button and a **Use <addon>** button for each listed addon that's running; the window widens to fit. All work with mouse, keyboard and controller:
   - Our own gamepad handler: D-pad moves the gold arrow, A picks.
   - Keyboard: Left/Right or Tab to move, Enter or Space to pick.
 
@@ -61,30 +61,28 @@ The two can't run together: DialogueUI takes over Blizzard's quest and gossip wi
 
 | Choice | What happens |
 |---|---|
-| **Use XpieUI** | `C_AddOns.DisableAddOn("DialogueUI")` and `C_AddOns.SaveAddOns()`, then a reload from the button click. After the reload DialogueUI isn't loaded, and the Quest plugin runs. |
-| **Use DialogueUI** | The Quest plugin is switched off (`db.enabled = false`). No reload is needed, because the plugin never hooked anything. The XpieUI settings page shows "Quest module: DialogueUI". |
+| **Use XpieUI** | `C_AddOns.DisableAddOn` for every installed listed addon, `C_AddOns.SaveAddOns()`, then a reload from the button click. The Quest plugin runs after the reload. |
+| **Use <addon>** | The Quest plugin is switched off (`db.enabled = false`), that addon stays on and any other listed addon is turned off. No reload is needed when the chosen addon is the only one running, because the plugin never hooked anything. |
 
-**Remembered:** the choice is saved, so the note never repeats on its own. It only comes back if both end up on again. That happens when the user turns DialogueUI back on in the AddOns list while the Quest plugin is enabled, or turns the Quest plugin back on while DialogueUI is enabled.
+**Remembered:** the choice is saved, so the note never repeats on its own. It only comes back if both end up on again: a listed addon turned back on in the AddOns list while the Quest plugin is enabled, or the Quest plugin turned back on while a listed addon is enabled.
 
-**Switching later:** the Quest page has a **Quest Module: XpieUI / DialogueUI** choice that does the same thing in reverse.
-- Choosing DialogueUI: `EnableAddOn("DialogueUI")`, the Quest plugin off, then a reload.
-- Choosing XpieUI: the same as the table above.
+**Switching later:** the Quest page has a **Quest Module** choice (XpieUI plus each installed listed addon) that does the same thing. Choosing an addon that isn't loaded turns it on, the others off, and reloads.
 
 **Which characters:**
 - `DisableAddOn` and `EnableAddOn` are called **without** a character name: the probe showed that passing the player's name changes nothing on Forever, while no name changes every character.
-- The default is **every character**, which matches how the AddOns list shows DialogueUI today.
+- The default is therefore **every character**.
 
-**Spoken integration:** while DialogueUI is the chosen module, the Spoken integration puts nothing on Blizzard's windows, because those windows aren't in use. Spoken's own DialogueUI style takes over.
+**Spoken integration:** while another addon is the chosen module, the Spoken integration puts nothing on Blizzard's windows, because those windows aren't in use. Spoken's own support for that addon takes over.
 
 Settings page, the whole list:
 
 | Setting | Default |
 |---|---|
-| Quest Module | XpieUI or DialogueUI (shown when DialogueUI is installed) |
+| Quest Module | XpieUI or a listed addon (shown when one is installed) |
 | Enabled | on |
 | Font Size | 100%, from 80 to 150% |
 | Hide UI While Talking | on |
-| Camera | on |
+| Speaker Camera | on |
 | Keyboard Controls | on (keyboard & mouse only) |
 | Spoken Integration, two highlight colours | on when Spoken is installed (see section 6) |
 | Move Windows / Reset Position | buttons |
@@ -126,7 +124,7 @@ These are shared font objects, so the quest details in the world map and quest l
 
 ### 3. Hide UI while talking
 
-The goal matches the user's DialogueUI screenshot: nothing on screen except the world, the speaker and the dialogue window.
+The goal (from the user's reference screenshot): nothing on screen except the world, the speaker and the dialogue window.
 
 - **What fades:** every child of UIParent, by alpha.
 - **What stays:**
@@ -138,7 +136,7 @@ The goal matches the user's DialogueUI screenshot: nothing on screen except the 
 - **Minimap:** moved away, as XpieHUD did, because it draws blips that ignore alpha.
 - **Coming back:** everything returns when the window closes, or at once if combat starts.
 
-DialogueUI hides the UI with `SetUIVisibility(false)`. We can't do that: Blizzard's quest windows are children of UIParent, so they would vanish too. Fading by alpha gives the same picture.
+We can't hide the UI with `SetUIVisibility(false)`: Blizzard's quest windows are children of UIParent, so they would vanish too. Fading by alpha gives the same picture.
 
 ### 3b. Tooltips at the cursor (keyboard & mouse only)
 
@@ -171,13 +169,13 @@ Keys, while a quest, gossip or book window is open and you're out of combat:
 
 ### 5. Camera
 
-One fixed behaviour, the same as DialogueUI's **Camera Movement: Zoom In** with **Zoom Multiplier 4** and **Change FOV** on (the user's setup in the screenshot). It works with both keyboard & mouse and the controller, and has no options beyond on/off.
-
-How DialogueUI does it (`Code/Camera.lua`), rewritten in our own code:
+One fixed behaviour, the user's chosen setup: zoom in on the speaker, turn to them, and narrow the field of view. It works with both keyboard & mouse and the controller, and has no options beyond on/off (**Speaker Camera**). File: `Camera.lua`.
 
 1. **Measure the speaker.** A hidden ModelScene actor loads the NPC's model with `SetModelByUnit("npc")`, and its bounding-box height gives the NPC's size.
-   - If that fails, a medium size is used. Objects and boards with no NPC model get only the gentler pan below.
-2. **Pick the zoom.** DialogueUI's height table gives the distance, times 2.5 (multiplier 4):
+   - If that fails (or the unit is secret), a medium size (3) is used.
+   - Objects, boards and quests from items (no speaker) get only a gentle shoulder offset that follows the zoom, and a zoom in to 3 (never out).
+   - Books get no camera.
+2. **Pick the zoom.** A height table gives the distance, times 2.5:
    - under 2 → 2
    - under 2.6 → 3
    - under 4 → 4
@@ -188,24 +186,26 @@ How DialogueUI does it (`Code/Camera.lua`), rewritten in our own code:
 
    The camera only zooms in, never out. The zoom from before is saved with `GetCameraZoom()`.
 3. **Turn to the speaker.**
-   - Blizzard's interact-focus camera is set: `test_cameraTargetFocusInteractEnable` 1, eased in over 1 s with pitch strength and `pitchlimit`.
-   - `test_cameraOverShoulder` moves the speaker away from the window's side of the screen.
-   - The field of view narrows a little.
-   - DialogueUI also changes `CameraKeepCharacterCentered` and `CameraReduceUnexpectedMovement`. We change the same settings, save each value first, and restore each one when the window closes.
-4. **Put it back** when the window closes: the settings, the zoom (`CameraZoomOut` back to the saved zoom), `pitchlimit 88` and the field of view.
-   - **Gossip → quest:** going from gossip to a quest page in the same conversation counts as one conversation (XpieHUD's 0.15 s restore delay), so the camera doesn't bounce.
-   - **Combat:** if combat starts, everything is restored at once. DialogueUI marks the focus settings as safe in combat.
-5. **Mounted and in instances:** mounted, the shoulder offset is scaled as DialogueUI does by default ("Maintain Offset While Mounted" on). In instances, the camera works too (that DialogueUI option is off by default).
+   - Blizzard's interact-focus camera: `test_cameraTargetFocusInteractEnable` 1, pitch strength eased 0 → 1, `pitchlimit` eased 88 → 15 and released at the end.
+   - `test_cameraOverShoulder` ±1.5 moves the speaker away from the window's side of the screen.
+   - Field of view eased to 75 (not while mounted or gliding).
+   - `CameraKeepCharacterCentered`, `CameraReduceUnexpectedMovement` and `test_cameraHeadMovementStrength` are set to 0. Every value is saved first and restored.
+4. **One motion.** Turn, shoulder offset, field of view and zoom all ease together on one clock (in-out sine, 1 s). The zoom is stepped along the same curve with small `CameraZoomIn`/`Out` calls, not one jump at the game's zoom speed. If the model loads late, the zoom still finishes with the rest (at least 0.6 s).
+5. **Put it back** when the window closes: everything eases back the same way, then every saved value is set exactly.
+   - **Gossip → quest:** going from gossip to a quest page counts as one conversation (0.15 s grace), so the camera doesn't bounce. A window reopened while easing back carries on from there.
+   - **Combat and logout:** everything is restored at once. After combat, if the window is still open, it eases in again (as Hide UI does).
+   - **Crash:** the saved values are kept in `XpieUIForeverDB` while a conversation is on and restored at the next login (only effective if the saved variables were written; not verified).
+6. **Mounted and shapeshifted:** mounted, the shoulder offset is scaled so the speaker stays clear of the window; druid forms use their own offsets. It works in instances too.
+7. **DynamicCam:** the camera stands down while it's loaded.
 
-**Blizzard's experimental-camera warning popup:** handled the way DialogueUI does it on Forever, so players never see it.
-- **The call:** `GameEvent.UnregisterInternalEvent("EXPERIMENTAL_CVAR_CONFIRMATION_NEEDED")` (DialogueUI `Code/Camera.lua:1125`, "For 12.1.0"). `GameEvent.UnregisterInternalEvent` is Blizzard's own function (`Blizzard_Game/Shared/EventRouting.lua:25`) for removing one of its internal event handlers, which is where Forever's popup comes from.
-- **Not the older trick:** DialogueUI's older `UIParent:UnregisterEvent(...)` (`Camera.lua:45`) does nothing on Forever. The probe showed UIParent doesn't listen for this event.
-- **Evidence:** at 08:45, with DialogueUI loaded, our probe's watcher saw the event fire but no popup appeared. Without DialogueUI, the popup appeared once per login.
-- **When:** we call it once at load, only if `GameEvent.UnregisterInternalEvent` exists and the Quest camera is on. Turning the camera off takes effect at the next `/reload`.
-- **Side effect:** Blizzard's experimental-camera warning won't show for the rest of the session for any reason, exactly as with DialogueUI installed today.
+**Blizzard's experimental-camera warning popup:** players never see it.
+- **The call:** `GameEvent.UnregisterInternalEvent("EXPERIMENTAL_CVAR_CONFIRMATION_NEEDED")`. `GameEvent.UnregisterInternalEvent` is Blizzard's own function (`Blizzard_Game/Shared/EventRouting.lua:25`) for removing one of its internal event handlers, which is where Forever's popup comes from.
+- **Not `UIParent:UnregisterEvent(...)`:** that does nothing on Forever. The probe showed UIParent doesn't listen for this event.
+- **When:** at our `ADDON_LOADED`, as soon as the saved settings are readable, if the camera is on (or camera values are waiting to be restored); also when the camera is turned on in the settings. The camera never touches a `test_camera*` setting unless the block worked.
+- **Side effect:** Blizzard's experimental-camera warning won't show for the rest of the session for any reason.
 - **No other popup handling:** no `StaticPopup_Hide`, and no hiding of the popup frame.
 
-**Probe results:** under the gamepad UI, the field of view (90 → 75 eased), the turn to the speaker (pitch strength 1) and the shoulder offset (±1.5, on the side away from the window, both sides seen) all applied. Everything came back exactly in all four tests. The zoom never moved, because the user's camera (4.93 to 5.35) was already closer than DialogueUI's goal for a 2.22-tall NPC (7.5). That matches DialogueUI, which only zooms in.
+**Probe results:** under the gamepad UI, the field of view (90 → 75 eased), the turn to the speaker (pitch strength 1) and the shoulder offset (±1.5, on the side away from the window, both sides seen) all applied. Everything came back exactly in all four tests. The zoom never moved in the probe, because the user's camera (4.93 to 5.35) was already closer than the goal for a 2.22-tall NPC (7.5); the camera only zooms in.
 
 ### 6. Spoken integration (part of the Quest module)
 
@@ -224,13 +224,13 @@ It's built on Spoken's documented public API (`Spoken/API.lua`, `API_VERSION` 1)
 
 **How Spoken highlights today** (read from the source):
 - **Colours:** there are only two: deep red `#9c1a1a` on light (parchment) text and gold `#ffd100` on dark text (`Spoken/UI/WordMarks.lua:21-22`).
-- **Picking the colour:** Spoken picks it per paragraph from the brightness of that paragraph's text colour (`Marks.ColorFor`, luminance ≥ 0.5 means dark page, gold). It's not by dialogue type: quests, gossip and books all use the same rule. Spoken's own caption window uses gold (`Transcript.lua:11`), and its DialogueUI and minimal looks pass the red.
+- **Picking the colour:** Spoken picks it per paragraph from the brightness of that paragraph's text colour (`Marks.ColorFor`, luminance ≥ 0.5 means dark page, gold). It's not by dialogue type: quests, gossip and books all use the same rule. Spoken's own caption window uses gold (`Transcript.lua:11`), and its parchment-style and minimal looks pass the red.
 - **Two words at a time:** the word being spoken and the next one (`Marks.Pick` returns `lit` and `neighbor`). That's why "dangerous if" shows as a pair in the screenshot.
 - **Drawn in place:**
   - Marks are colour codes written into the paragraph's own text (`Marks.Want(..., color)`), so nothing moves or rewraps.
   - The original text is put back when the line ends.
   - Spoken's "Type Words Out" option blanks words that haven't been read yet. We honour it the same way.
-- **Who does this for DialogueUI:** not Spoken itself, but `Spoken_Quests/UI/DialogueUIBridge.lua` (quests and gossip) and `Spoken_Readables/UI/DialogueUIBook.lua` (books). Both stand down without DialogueUI, and we do the same job on Blizzard's windows.
+- **Who does this for other quest windows:** not Spoken itself, but bridge files in Spoken_Quests (quests and gossip) and Spoken_Readables (books) that only run with their own quest-window addon. We do the same job on Blizzard's windows.
 
 **Colour control:** `Marks.Want` takes the colour as an argument, so we pass our own instead of `Marks.ColorFor`'s:
 - **Parchment colour:** for the quest, gossip and book windows on parchment.
@@ -240,12 +240,12 @@ It's built on Spoken's documented public API (`Spoken/API.lua`, `API_VERSION` 1)
 - **Live:** changes apply straight away, including to the line playing now.
 
 **Controls at the top of the window:**
-- **Buttons:** Spoken's round buttons (`Spoken:CreateRoundButton`) in a row at the top right of the quest, gossip and book windows, as on DialogueUI's window: Play/Pause, Previous, Skip, and Report (only if Spoken's "hide Report buttons" setting is off).
+- **Buttons:** Spoken's round buttons (`Spoken:CreateRoundButton`) in a row at the top right of the quest, gossip and book windows: Play/Pause, Previous, Skip, and Report (only if Spoken's "hide Report buttons" setting is off).
 - **Calls and updates:** they call `Spoken:TogglePause`, `Previous` and `Skip`, and update on the `CLIP_STARTED`, `CLIP_STOPPED` and `AUDIO_CHANGED` callbacks.
-- **Pre-built row:** the probe confirmed that `Spoken:CreateDialogueUIRow(QuestFrame, ...)` works on Blizzard's frames, so we use Spoken's own row, placed at the window's top right.
+- **Pre-built row:** the probe confirmed that Spoken's row helper (`Spoken:CreateDialogueUIRow(QuestFrame, ...)`, Spoken's API name) works on Blizzard's frames, so we use Spoken's own row, placed at the window's top right.
 
 **Words highlighted in our window:**
-- **Finding and matching the line:** `Spoken:GetCaption()` gives the line's words and the word being spoken. `Spoken:WordMarks()` gives `Align`, `Pick`, `Cut`, `Spans` and `Want`, which match them to our window's text, as the DialogueUI bridge does.
+- **Finding and matching the line:** `Spoken:GetCaption()` gives the line's words and the word being spoken. `Spoken:WordMarks()` gives `Align`, `Pick`, `Cut`, `Spans` and `Want`, which match them to our window's text.
 - **Which text:** quest description, objectives, progress and reward text, the gossip greeting, the quest greeting, and book pages.
 - **Map safety:** QuestInfo's frames are shared with the world map, so we only mark them while `QuestFrame` owns them, and always put the clean text back first. This avoids XpieHUD's old map taint.
 - **Scrolling:** the window scrolls to keep the word being read in view (Spoken's AutoScroll behaviour).
@@ -287,13 +287,13 @@ Each delivery: deploy, test in game with keyboard & mouse and with the controlle
    - not covered: Gossip and ItemText weren't opened while moving was on. Delivery 1 tests those first.
    - whether inherited font objects follow `QuestFont` live
    - camera: the NPC height measurement, then zoom, focus, shoulder offset and field of view separately, in both modes; whether the warning popup appears; and that every setting comes back exactly when the window closes
-   - which Spoken API fields exist, whether `CreateDialogueUIRow` accepts a Blizzard frame, and whether `SetPlayerHost(hiddenFrame)` hides Spoken's player and subtitles
+   - which Spoken API fields exist, whether Spoken's row helper accepts a Blizzard frame, and whether `SetPlayerHost(hiddenFrame)` hides Spoken's player and subtitles
    - whether `C_AddOns.DisableAddOn` / `EnableAddOn` with and without a character name change one character or every character on Forever, and that the reload button works from our window
-1. **Module choice and the shared position:** the XpieUI-or-DialogueUI note and the Quest Module setting, then the shared position with saving and Reset.
+1. **Module choice and the shared position:** the incompatible-addon choice and the Quest Module setting, then the shared position with saving and Reset.
 2. **Font size.**
 3. **Hide UI while talking.**
 4. **Keyboard controls**, badges, hints (refined) and tooltips at the cursor.
-5. **Camera**: DialogueUI's Zoom In at multiplier 4, both modes.
+5. **Camera**: the speaker camera, both modes.
 6. **Spoken integration**: the checkbox and controls row first, then word highlighting with the two colour settings, then the small tooltip-style box.
 
 ## Risks
