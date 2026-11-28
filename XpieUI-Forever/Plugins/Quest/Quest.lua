@@ -154,6 +154,7 @@ function plugin:BuildModuleSettings(page)
     page:Header("Quest Module")
     page:Dropdown({
         label = "Quest Module",
+        confirmOnly = true,   -- every pick reloads the UI: no D-pad stepping
         values = function()
             local values = { { key = "xpieui", label = "XpieUI" } }
             for _, name in ipairs(installed) do values[#values + 1] = { key = name, label = name } end

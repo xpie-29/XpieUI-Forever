@@ -329,7 +329,9 @@ end
 
 -- White label + dropdown. opt.values() returns { { key = ..., label = ... }, ... }.
 -- Click or A opens the choice list (up/down, A picks, B cancels); D-pad
--- left/right step through the choices without opening it.
+-- left/right step through the choices without opening it, unless
+-- opt.confirmOnly is set (a choice with side effects, such as a reload):
+-- then only click or A opens the list, and D-pad left goes back as usual.
 function PageMixin:Dropdown(opt)
     local page = self
     local label = Text(self.content, "GameFontHighlightMedium", 190)
@@ -353,6 +355,7 @@ function PageMixin:Dropdown(opt)
 
     self:AddFocus(dropdown, function(button)
         if button == "PAD1" then Open() return end
+        if opt.confirmOnly then return end
         local values = opt.values()
         if #values == 0 then return end
         local current = 1
@@ -361,7 +364,7 @@ function PageMixin:Dropdown(opt)
         end
         local direction = button == "PADDLEFT" and -1 or 1
         Pick(values[(current - 1 + direction) % #values + 1].key)
-    end, true)
+    end, not opt.confirmOnly)
 
     self.refreshers[#self.refreshers + 1] = function()
         local value, text = page:GetValue(opt), ""
