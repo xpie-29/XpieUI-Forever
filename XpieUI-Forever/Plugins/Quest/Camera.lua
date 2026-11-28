@@ -192,10 +192,19 @@ local function RecoverFromCrash()
     local db = QuestDB()
     db = db and db.cameraBaseline
     if type(db) ~= "table" or plugin:CameraAddonPresent() then return end
+    -- The eased settings (any value) are put back only when the camera may
+    -- have been running: a value the player changed themselves is kept when
+    -- both modes' fixed settings show it idle. Read before the loop resets them.
+    local function Idle(cvar, ours)
+        local saved = db[cvar]
+        return saved ~= nil and not SameValue(saved, ours) and SameValue(GetCVar(cvar), saved)
+    end
+    local idle = Idle("test_cameraTargetFocusInteractEnable", "1")
+        and (Idle("CameraKeepCharacterCentered", "0") or Idle("CameraReduceUnexpectedMovement", "0"))
     for cvar, ours in pairs(CAMERA_VALUES) do
         local saved, now = db[cvar], GetCVar(cvar)
         if saved ~= nil and now ~= nil and not SameValue(now, saved)
-            and (ours == true or SameValue(now, ours)) then
+            and (ours == true and not idle or SameValue(now, ours)) then
             if cvar:find("^test_camera") then BlockWarning() end
             Set(cvar, saved)
         end
