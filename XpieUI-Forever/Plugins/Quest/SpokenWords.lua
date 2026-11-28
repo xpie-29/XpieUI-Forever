@@ -69,6 +69,9 @@ local function WordsOn()
         and type(spoken.GetCaption) == "function" and type(spoken.SplitCaption) == "function"
         and Marks() ~= nil
 end
+-- The test SpokenWindowHolds makes: false means no line is matched against
+-- the window's text (integration off, or a Spoken without word matching).
+plugin.SpokenWordsOn = function() return WordsOn() and true or false end
 
 local function ShownWindow()
     for _, name in ipairs(WINDOWS) do

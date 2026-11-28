@@ -289,17 +289,17 @@ local function WindowShown()
 end
 
 -- Where the narrator's line goes now: a window that shows it keeps it,
--- otherwise the box. With Spoken Integration off nothing matches lines to
--- the window's text, so an open window keeps them all rather than the box
--- repeating what the window already shows.
+-- otherwise the box. With Spoken Integration off, or a Spoken too old for
+-- word matching, nothing matches lines to the window's text, so an open
+-- window keeps them all rather than the box repeating what it already shows.
 local function Decide()
     local clip = narratorClip
     if not clip then
         if line and line.narrated then FadeOut() end
         return
     end
-    local integration = plugin.SpokenOn and plugin.SpokenOn()
-    if (not integration and WindowShown())
+    local matching = plugin.SpokenWordsOn and plugin.SpokenWordsOn()
+    if (not matching and WindowShown())
         or (plugin.SpokenWindowHolds and plugin.SpokenWindowHolds(clip)) then
         if box and box:IsShown() and line and line.narrated then Finish() end
         return
