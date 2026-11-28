@@ -13,8 +13,10 @@
 --       OnLogin     = function(self) end,           -- after PLAYER_LOGIN
 --       Apply       = function(self) end,           -- re-apply after settings / combat
 --       BuildSettings = function(self, page) end,   -- optional settings sub-page
---       BuildModuleSettings = function(self, page) end, -- optional, built even
---                                                   -- when the plugin isn't running
+--       BuildModuleSettings = function(self, page) return true end, -- optional,
+--                                                   -- built even when the plugin isn't
+--                                                   -- running; return true if it drew
+--                                                   -- anything (hides the "turned off" note)
 --       GetStatus   = function(self) end,           -- optional status override
 --   })
 --
