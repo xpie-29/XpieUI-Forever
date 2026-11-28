@@ -254,7 +254,7 @@ local function Invalidate()
     -- shouldn't lose the hand-off. OnHide clears it once the offer is made,
     -- and ShowSpokenBox only takes a line that's still playing.
     state.paragraphs, state.clip, state.map, state.span = nil, nil, nil, nil
-    state.dirty,state.scrolledTo, state.scrollSet, state.userScrolled = true, nil, nil, nil
+    state.dirty, state.scrolledTo, state.scrollSet, state.userScrolled = true, nil, nil, nil
 end
 plugin.InvalidateSpokenWords = Invalidate
 
@@ -464,7 +464,8 @@ function plugin:InitSpokenWords()
                 state.matchedClip = nil
                 local narrator = plugin.SpokenNarratorActive and plugin.SpokenNarratorActive()
                 if clip and not narrator and plugin.SpokenOn and plugin.SpokenOn() then
-                    offer = { clip = clip, left = frame:GetLeft(), top = frame:GetTop(), scale = frame:GetEffectiveScale() }                end
+                    offer = { clip = clip, left = frame:GetLeft(), top = frame:GetTop(), scale = frame:GetEffectiveScale() }
+                end
                 Invalidate()
                 Update()
             end)
