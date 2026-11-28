@@ -69,6 +69,9 @@ local function WordsOn()
         and type(spoken.GetCaption) == "function" and type(spoken.SplitCaption) == "function"
         and Marks() ~= nil
 end
+-- The test SpokenWindowHolds makes: false means no line is matched against
+-- the window's text (integration off, or a Spoken without word matching).
+plugin.SpokenWordsOn = function() return WordsOn() and true or false end
 
 local function ShownWindow()
     for _, name in ipairs(WINDOWS) do
@@ -76,6 +79,7 @@ local function ShownWindow()
         if frame and frame:IsShown() then return frame end
     end
 end
+plugin.SpokenShownWindow = ShownWindow
 
 local function ColorCode(hex)
     return "|cff" .. hex
@@ -246,8 +250,10 @@ end
 local function Invalidate()
     Restore()
     invalidatedAt = GetTime()
+    -- state.matchedClip stays: a page turning just before the window closes
+    -- shouldn't lose the hand-off. OnHide clears it once the offer is made,
+    -- and ShowSpokenBox only takes a line that's still playing.
     state.paragraphs, state.clip, state.map, state.span = nil, nil, nil, nil
-    state.matchedClip = nil
     state.dirty,state.scrolledTo, state.scrollSet, state.userScrolled = true, nil, nil, nil
 end
 plugin.InvalidateSpokenWords = Invalidate
@@ -455,6 +461,7 @@ function plugin:InitSpokenWords()
             -- Put the text back at once: the map may take QuestInfo next.
             frame:HookScript("OnHide", function()
                 local clip = state.matchedClip
+                state.matchedClip = nil
                 local narrator = plugin.SpokenNarratorActive and plugin.SpokenNarratorActive()
                 if clip and not narrator and plugin.SpokenOn and plugin.SpokenOn() then
                     offer = { clip = clip, left = frame:GetLeft(), top = frame:GetTop(), scale = frame:GetEffectiveScale() }                end
