@@ -192,10 +192,19 @@ local function RecoverFromCrash()
     local db = QuestDB()
     db = db and db.cameraBaseline
     if type(db) ~= "table" or plugin:CameraAddonPresent() then return end
+    -- The eased settings (any value) are put back only when the camera may
+    -- have been running: a value the player changed themselves is kept when
+    -- both modes' fixed settings show it idle. Read before the loop resets them.
+    local function Idle(cvar, ours)
+        local saved = db[cvar]
+        return saved ~= nil and not SameValue(saved, ours) and SameValue(GetCVar(cvar), saved)
+    end
+    local idle = Idle("test_cameraTargetFocusInteractEnable", "1")
+        and (Idle("CameraKeepCharacterCentered", "0") or Idle("CameraReduceUnexpectedMovement", "0"))
     for cvar, ours in pairs(CAMERA_VALUES) do
         local saved, now = db[cvar], GetCVar(cvar)
         if saved ~= nil and now ~= nil and not SameValue(now, saved)
-            and (ours == true or SameValue(now, ours)) then
+            and (ours == true and not idle or SameValue(now, ours)) then
             if cvar:find("^test_camera") then BlockWarning() end
             Set(cvar, saved)
         end
@@ -440,10 +449,12 @@ end
 -- Start / restore
 -- ---------------------------------------------------------------------------
 local function Start()
-    if cam.phase == "in" or cam.phase == "on" then return end
+    local speaker = HasSpeaker()
+    if (cam.phase == "in" or cam.phase == "on") and cam.mode == (speaker and "focus" or "pan") then return end
     BlockWarning()
-    -- Opened again while easing back: carry on from here, same backup.
-    local resuming = cam.phase == "out"
+    -- Opened again while easing back, or the next window has (or lacks) a
+    -- speaker: carry on from here, same backup.
+    local resuming = cam.phase ~= nil
     if not resuming then
         LiftControllerCVars()
         cam.backup = { [PITCH] = ReadPitchLimit() }
@@ -459,7 +470,7 @@ local function Start()
     pcall(events.RegisterEvent, events, "PLAYER_IS_GLIDING_CHANGED")
     events:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
 
-    if HasSpeaker() then
+    if speaker then
         cam.mode = "focus"
         for cvar, value in pairs(FOCUS_CVARS) do
             if cvar == STRENGTH then Backup(cvar) else BackupAndSet(cvar, value) end

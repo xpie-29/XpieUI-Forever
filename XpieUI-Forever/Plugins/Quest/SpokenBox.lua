@@ -279,15 +279,28 @@ function plugin.SpokenNarratorActive()
     return Call("GetPlayerStyle") == NARRATOR_ID
 end
 
+local WINDOWS = { "QuestFrame", "GossipFrame", "ItemTextFrame" }
+local function WindowShown()
+    for _, name in ipairs(WINDOWS) do
+        local frame = _G[name]
+        if frame and frame:IsShown() then return true end
+    end
+    return false
+end
+
 -- Where the narrator's line goes now: a window that shows it keeps it,
--- otherwise the box.
+-- otherwise the box. With Spoken Integration off nothing matches lines to
+-- the window's text, so an open window keeps them all rather than the box
+-- repeating what the window already shows.
 local function Decide()
     local clip = narratorClip
     if not clip then
         if line and line.narrated then FadeOut() end
         return
     end
-    if plugin.SpokenWindowHolds and plugin.SpokenWindowHolds(clip) then
+    local integration = plugin.SpokenOn and plugin.SpokenOn()
+    if (not integration and WindowShown())
+        or (plugin.SpokenWindowHolds and plugin.SpokenWindowHolds(clip)) then
         if box and box:IsShown() and line and line.narrated then Finish() end
         return
     end
