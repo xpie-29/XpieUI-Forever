@@ -93,8 +93,11 @@ local function BuildPluginPage(plugin)
 
     -- Settings that matter even while the plugin isn't running (the Quest
     -- module's choice of quest-window addon).
+    -- BuildModuleSettings returns true when it drew anything.
+    local drewModule = false
     if plugin.BuildModuleSettings then
-        addon:SafeCall(plugin.BuildModuleSettings, plugin, page)
+        local ok, drew = addon:SafeCall(plugin.BuildModuleSettings, plugin, page)
+        drewModule = ok and drew == true
     end
 
     if addon:IsPluginRunning(plugin) then
@@ -102,7 +105,7 @@ local function BuildPluginPage(plugin)
             addon:SafeCall(plugin.BuildSettings, plugin, page)
         end
     elseif not plugin.active then
-        if not plugin.BuildModuleSettings then
+        if not drewModule then
             page:Note("This plugin is turned off on the General page. Its settings appear here once it is on.")
         end
     else

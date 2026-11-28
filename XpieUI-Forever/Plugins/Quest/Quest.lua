@@ -148,9 +148,11 @@ end
 -- ---------------------------------------------------------------------------
 -- Settings
 -- ---------------------------------------------------------------------------
+-- Returns true when it drew anything (Settings shows the "turned off" note
+-- otherwise).
 function plugin:BuildModuleSettings(page)
     local installed = self:InstalledOthers()
-    if #installed == 0 then return end
+    if #installed == 0 then return false end
     page:Header("Quest Module")
     page:Dropdown({
         label = "Quest Module",
@@ -171,6 +173,7 @@ function plugin:BuildModuleSettings(page)
     })
     page:Note(("XpieUI keeps Blizzard's own windows. %s replace%s them. Only one can run: switching turns the others off and reloads the UI."):format(
         self:JoinNames(installed, "and"), #installed == 1 and "s" or ""))
+    return true
 end
 
 function plugin:BuildSettings(page)
