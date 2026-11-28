@@ -108,14 +108,28 @@ end
 -- The text on each window
 -- ---------------------------------------------------------------------------
 -- The quest window owns QuestInfo's text (not the map's quest log).
-local function QuestInfoOurs()
-    if not QuestInfoFrame or QuestInfoFrame.questLog then return false end
-    local parent = QuestInfoFrame:GetParent()
-    while parent do
-        if parent == QuestFrame then return true end
+local function DescendsFrom(region, ancestor)
+    local parent = region and region.GetParent and region:GetParent()
+    for _ = 1, 30 do
+        if not parent then return false end
+        if parent == ancestor then return true end
         parent = parent:GetParent()
     end
     return false
+end
+
+-- Forever's client has no QuestInfoFrame (or one without a parent), so ask
+-- the text itself where it sits; failing that, it's ours unless the map or
+-- quest log, the only other users, is open.
+local function QuestInfoOurs()
+    if QuestInfoFrame and QuestInfoFrame.questLog then return false end
+    if DescendsFrom(QuestInfoDescriptionText, QuestFrame) or DescendsFrom(QuestInfoRewardText, QuestFrame)
+        or DescendsFrom(QuestInfoFrame, QuestFrame) then
+        return true
+    end
+    local mapOpen = (WorldMapFrame and WorldMapFrame:IsShown()) or (QuestLogFrame and QuestLogFrame:IsShown())
+        or (QuestLogDetailFrame and QuestLogDetailFrame:IsShown())
+    return not mapOpen
 end
 
 local function Showing(region)
@@ -234,7 +248,7 @@ local function Invalidate()
     invalidatedAt = GetTime()
     state.paragraphs, state.clip, state.map, state.span = nil, nil, nil, nil
     state.matchedClip = nil
-    state.dirty, state.scrolledTo, state.scrollSet, state.userScrolled = true, nil, nil, nil
+    state.dirty,state.scrolledTo, state.scrollSet, state.userScrolled = true, nil, nil, nil
 end
 plugin.InvalidateSpokenWords = Invalidate
 
@@ -301,16 +315,25 @@ local function Tick()
     if state.dirty then
         state.paragraphs, state.dirty = Collect(), false
         state.clip, state.map = nil, nil
+        -- Nothing yet: Blizzard may fill the text after we first look, without
+        -- a hook of ours firing. Look again next tick.
+        if #state.paragraphs == 0 then state.dirty = true end
     end
     local caption = Api():GetCaption()
     local clip = caption and caption.clip
     if clip and #state.paragraphs > 0 then
         if clip ~= state.clip then
             Restore()
-            state.clip, state.scrolledTo = clip, nil
+            state.clip, state.scrolledTo, state.clipAt = clip, nil, GetTime()
             state.scrollSet, state.userScrolled = nil, nil
             state.map, state.span = marks.Align(caption.words, state.paragraphs)
             if state.map then state.matchedClip = clip end
+        elseif not state.map then
+            -- Not found yet: the caption's words can come a moment after the
+            -- line itself. Nothing is drawn without a map, so the text is
+            -- still Blizzard's and safe to look through again.
+            state.map, state.span = marks.Align(caption.words, state.paragraphs)
+            if state.map then state.matchedClip, state.force = clip, true end
         end
     else
         state.clip, state.map = nil, nil
@@ -347,11 +370,20 @@ end
 -- true while a window has just opened or turned a page and is still looking
 -- for the line, false once it's clear the line isn't there (zone lore over a
 -- quest window, say), or with the highlighting off.
+-- The grace runs from the latest of: the window opening or turning a page,
+-- the box first asking about this line, and the window first seeing its
+-- caption. (Measured from the window opening alone, a quest NPC's line handed
+-- over a moment after the window opened went straight to the box, before the
+-- window had had a single tick to look for it.)
+local asked = { clip = nil, at = 0 }
 function plugin.SpokenWindowHolds(clip)
     if not ShownWindow() then return false end
     if not WordsOn() then return false end
     if state.clip == clip and state.map then return true end
-    return GetTime() - invalidatedAt < MATCH_GRACE
+    local now = GetTime()
+    if asked.clip ~= clip then asked.clip, asked.at = clip, now end
+    local since = math.max(invalidatedAt, asked.at, (state.clip == clip and state.clipAt) or 0)
+    return now - since < MATCH_GRACE
 end
 
 -- ---------------------------------------------------------------------------
@@ -425,8 +457,7 @@ function plugin:InitSpokenWords()
                 local clip = state.matchedClip
                 local narrator = plugin.SpokenNarratorActive and plugin.SpokenNarratorActive()
                 if clip and not narrator and plugin.SpokenOn and plugin.SpokenOn() then
-                    offer = { clip = clip, left = frame:GetLeft(), top = frame:GetTop(), scale = frame:GetEffectiveScale() }
-                end
+                    offer = { clip = clip, left = frame:GetLeft(), top = frame:GetTop(), scale = frame:GetEffectiveScale() }                end
                 Invalidate()
                 Update()
             end)

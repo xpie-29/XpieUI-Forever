@@ -1,2 +1,2 @@
-_assets/
 .DS_Store
+.claude/settings.local.json
