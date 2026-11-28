@@ -79,6 +79,7 @@ local function ShownWindow()
         if frame and frame:IsShown() then return frame end
     end
 end
+plugin.SpokenShownWindow = ShownWindow
 
 local function ColorCode(hex)
     return "|cff" .. hex

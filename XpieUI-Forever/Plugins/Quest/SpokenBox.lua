@@ -279,13 +279,9 @@ function plugin.SpokenNarratorActive()
     return Call("GetPlayerStyle") == NARRATOR_ID
 end
 
-local WINDOWS = { "QuestFrame", "GossipFrame", "ItemTextFrame" }
+-- SpokenWords.lua's list of windows, looked up when asked.
 local function WindowShown()
-    for _, name in ipairs(WINDOWS) do
-        local frame = _G[name]
-        if frame and frame:IsShown() then return true end
-    end
-    return false
+    return plugin.SpokenShownWindow ~= nil and plugin.SpokenShownWindow() ~= nil
 end
 
 -- Where the narrator's line goes now: a window that shows it keeps it,
