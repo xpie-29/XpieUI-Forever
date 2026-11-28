@@ -449,10 +449,12 @@ end
 -- Start / restore
 -- ---------------------------------------------------------------------------
 local function Start()
-    if cam.phase == "in" or cam.phase == "on" then return end
+    local speaker = HasSpeaker()
+    if (cam.phase == "in" or cam.phase == "on") and cam.mode == (speaker and "focus" or "pan") then return end
     BlockWarning()
-    -- Opened again while easing back: carry on from here, same backup.
-    local resuming = cam.phase == "out"
+    -- Opened again while easing back, or the next window has (or lacks) a
+    -- speaker: carry on from here, same backup.
+    local resuming = cam.phase ~= nil
     if not resuming then
         LiftControllerCVars()
         cam.backup = { [PITCH] = ReadPitchLimit() }
@@ -468,7 +470,7 @@ local function Start()
     pcall(events.RegisterEvent, events, "PLAYER_IS_GLIDING_CHANGED")
     events:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
 
-    if HasSpeaker() then
+    if speaker then
         cam.mode = "focus"
         for cvar, value in pairs(FOCUS_CVARS) do
             if cvar == STRENGTH then Backup(cvar) else BackupAndSet(cvar, value) end
